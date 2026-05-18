@@ -8,120 +8,130 @@ import { FaBars, FaTimes, FaSignInAlt } from "react-icons/fa";
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
 
-  // Dynamic links updated to match standard alumni routing ecosystems
   const navLinks = [
     { name: "Home", href: "/" },
-    { name: "About Us", href: "/about" },
-    { name: "Activities", href: "/activities" },
-    { name: "Gallery", href: "/gallery" },
-    { name: "Donate", href: "/donate" },
+    { name: "About", href: "/" },
+    { name: "Activities", href: "/" },
+    { name: "Gallery", href: "/" },
+    { name: "Donate", href: "/" },
   ];
 
   return (
-    <nav className="bg-white/95 backdrop-blur-md shadow-sm sticky top-0 z-50 border-b border-slate-100 transition-all">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="flex justify-between items-center h-20">
+    <>
+      <nav className="bg-white/95 backdrop-blur-md sticky top-0 z-50 border-b border-slate-100 shadow-sm">
+        
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
           
-          {/* =====================================================
-              LOGO & BRANDING SECTION
-          ====================================================== */}
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-sky-500 shadow-sm transition group-hover:scale-105">
-              <Image 
-                src="/images/schoollogo.jpeg" // Pointing straight to your dedicated PIHS logo file
-                alt="PIHS Logo"
-                fill
-                className="object-cover"
-                priority
-              />
-            </div>
-            <span className="hidden sm:block text-xl font-black text-slate-800 leading-none tracking-tight">
-              PIHS OPA <br />
-              <span className="text-sky-600 text-[10px] font-black uppercase tracking-widest block mt-1">
-                Providence International High School
-              </span>
-            </span>
-          </Link>
+          <div className="flex items-center justify-between h-16 sm:h-20">
 
-          {/* =====================================================
-              DESKTOP NAVIGATION MENU
-          ====================================================== */}
-          <div className="hidden lg:flex items-center space-x-8">
-            <div className="flex space-x-8 font-semibold text-slate-600">
-              {navLinks.map((link) => (
-                <Link 
-                  key={link.name} 
-                  href={link.href} 
-                  className="hover:text-sky-600 transition-colors duration-200 relative py-2 group text-sm uppercase tracking-wider font-bold"
-                >
-                  {link.name}
-                  {/* Premium underline hover effect */}
-                  <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-sky-500 transition-all duration-300 group-hover:w-full" />
-                </Link>
-              ))}
-            </div>
-            
-            {/* Restored Portal Gateway Launcher */}
-            <Link 
-              href="/login" 
-              className="inline-flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold text-sm tracking-wider uppercase hover:bg-sky-600 transition-all shadow-md hover:shadow-sky-500/10 active:scale-95"
+            {/* ================= LOGO ================= */}
+            <Link
+              href="/"
+              className="flex items-center gap-2 sm:gap-3 min-w-0"
             >
-              <FaSignInAlt className="text-xs text-sky-400" />
-              Portal Login
+              <div className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-full overflow-hidden border-2 border-sky-500 shrink-0">
+                <Image
+                  src="/images/schoollogo.jpeg"
+                  alt="PIHS Logo"
+                  fill
+                  priority
+                  className="object-cover"
+                />
+              </div>
+
+              {/* TEXT */}
+              <div className="min-w-0">
+                <h1 className="text-sm sm:text-lg md:text-xl font-black text-slate-800 truncate leading-tight">
+                  PIHSOPA
+                </h1>
+
+                <p className="hidden sm:block text-[9px] md:text-[10px] uppercase tracking-wider font-bold text-sky-600 truncate">
+                  Providence International High School
+                </p>
+              </div>
             </Link>
-          </div>
 
-          {/* Mobile Hamburg Trigger Toggle */}
-          <button
-            className="lg:hidden text-xl text-slate-700 p-2 hover:bg-slate-50 rounded-xl transition-all focus:outline-none"
-            onClick={() => setIsOpen(!isOpen)}
-            aria-label="Toggle navigation menu"
-          >
-            {isOpen ? <FaTimes /> : <FaBars />}
-          </button>
-        </div>
-      </div>
+            {/* ================= DESKTOP MENU ================= */}
+            <div className="hidden md:flex items-center gap-6 lg:gap-8">
+              
+              <div className="flex items-center gap-4 lg:gap-6">
+                {navLinks.map((link) => (
+                  <Link
+                    key={link.name}
+                    href={link.href}
+                    className="relative text-xs lg:text-sm uppercase font-bold tracking-wider text-slate-700 hover:text-sky-600 transition"
+                  >
+                    {link.name}
 
-      {/* =====================================================
-          MOBILE SIDEBAR MODAL MENU
-          ====================================================== */}
-      <div 
-        className={`lg:hidden fixed inset-y-0 right-0 w-72 bg-white shadow-2xl transform ${
-          isOpen ? "translate-x-0" : "translate-x-full"
-        } transition-transform duration-300 ease-in-out z-50`}
-      >
-        <div className="p-6 flex flex-col h-full justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-6 border-b border-slate-100 mb-8">
-              <span className="font-black text-slate-800 tracking-tight">Navigation</span>
-              <button 
-                className="text-xl text-slate-500 p-2 hover:bg-slate-50 rounded-xl transition"
-                onClick={() => setIsOpen(false)}
+                    <span className="absolute left-0 -bottom-1 h-0.5 w-0 bg-sky-500 transition-all duration-300 hover:w-full" />
+                  </Link>
+                ))}
+              </div>
+
+              {/* LOGIN BUTTON */}
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 bg-slate-900 hover:bg-sky-600 text-white px-4 py-2 rounded-xl text-xs lg:text-sm font-bold uppercase tracking-wider transition"
               >
-                <FaTimes />
-              </button>
+                <FaSignInAlt className="text-[10px]" />
+                Portal
+              </Link>
             </div>
-            
-            <div className="flex flex-col space-y-4 font-bold text-slate-700">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.name}
-                  href={link.href}
-                  className="text-base uppercase tracking-wider font-black hover:text-sky-600 border-b pb-3 border-slate-50 text-slate-800 block"
-                  onClick={() => setIsOpen(false)}
-                >
-                  {link.name}
-                </Link>
-              ))}
-            </div>
+
+            {/* ================= MOBILE BUTTON ================= */}
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="md:hidden text-slate-700 text-xl p-2 rounded-lg hover:bg-slate-100 transition"
+            >
+              {isOpen ? <FaTimes /> : <FaBars />}
+            </button>
+
+          </div>
+        </div>
+      </nav>
+
+      {/* ================= MOBILE MENU ================= */}
+      <div
+        className={`fixed top-0 right-0 h-full w-[85%] max-w-[320px] bg-white z-50 shadow-2xl transform transition-transform duration-300 md:hidden ${
+          isOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        <div className="flex flex-col h-full p-6">
+
+          {/* HEADER */}
+          <div className="flex items-center justify-between border-b pb-5">
+            {/* <h2 className="font-black text-slate-800">
+              Navigation
+            </h2> */}
+
+            <button
+              onClick={() => setIsOpen(false)}
+              className="text-xl text-slate-600"
+            >
+              <FaTimes />
+            </button>
           </div>
 
-          {/* Action trigger locked to bottom of mobile layout drawer */}
-          <div className="pt-6 border-t border-slate-100">
+          {/* LINKS */}
+          <div className="flex flex-col mt-8 space-y-5">
+            {navLinks.map((link) => (
+              <Link
+                key={link.name}
+                href={link.href}
+                onClick={() => setIsOpen(false)}
+                className="text-sm uppercase tracking-wider font-black text-slate-700 hover:text-sky-600 transition"
+              >
+                {link.name}
+              </Link>
+            ))}
+          </div>
+
+          {/* BUTTON */}
+          <div className="mt-auto pt-8">
             <Link
               href="/login"
-              className="bg-sky-500 hover:bg-sky-600 text-white text-center font-bold tracking-wider uppercase py-4 rounded-xl block w-full transition shadow-lg shadow-sky-500/20"
               onClick={() => setIsOpen(false)}
+              className="block w-full text-center bg-sky-500 hover:bg-sky-600 text-white py-4 rounded-xl font-black uppercase tracking-wider transition"
             >
               Portal Login
             </Link>
@@ -129,13 +139,13 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Backdrop Glass Mask for Mobile Layout Drawer */}
+      {/* ================= OVERLAY ================= */}
       {isOpen && (
-        <div 
-          className="lg:hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 transition-opacity"
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
-    </nav>
+    </>
   );
 }
