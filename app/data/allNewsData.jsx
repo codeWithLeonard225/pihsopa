@@ -1,6 +1,6 @@
-// app/data/newsData.js
+// app/data/allNewsData.jsx
 
-export const newsData = [
+export const allNewsData = [
   {
     id: "pihsopa-first-general-meeting-2026",
     title:
