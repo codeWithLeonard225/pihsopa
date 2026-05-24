@@ -8,7 +8,7 @@ import {
   query, where, getDocs, doc, writeBatch 
 } from "firebase/firestore";
 import imageCompression from 'browser-image-compression';
-import { MdErrorOutline, MdFingerprint, MdWarningAmber, MdSchool } from "react-icons/md";
+import { MdErrorOutline, MdFingerprint, MdWarningAmber, MdSchool, MdWork, MdLayers } from "react-icons/md";
 import { uploadToCloudinary } from "@/app/lib/cloudinaryUpload";
 import IDCardModal from "../../components/IDCardModal";
 
@@ -30,11 +30,16 @@ export default function RegisterPage() {
   const [autoMembershipId, setAutoMembershipId] = useState("");
   const [autoOrgId, setAutoOrgId] = useState("");
 
-  // ⭐ Track state of the exit status to conditionally render the graduation class dropdown
-  const [exitStatus, setExitStatus] = useState("");
+  // Professional status visibility toggle helper state
+  const [employmentStatus, setEmploymentStatus] = useState("");
 
-  // Generate years array from 2007 to 2025
-  const graduationYears = Array.from({ length: 2025 - 2007 + 1 }, (_, i) => 2007 + i);
+  // Timeline lookup collections helper ranges
+  const enrollmentYears = Array.from({ length: 2026 - 2000 + 1 }, (_, i) => 2000 + i);
+  const calendarDays = Array.from({ length: 31 }, (_, i) => i + 1);
+  const calendarMonths = [
+    "January", "February", "March", "April", "May", "June", 
+    "July", "August", "September", "October", "November", "December"
+  ];
 
   const closeModal = () => {
     router.push("/");
@@ -83,24 +88,39 @@ export default function RegisterPage() {
   const validateForm = (formData) => {
     const errors = {};
     if (!photo) errors.photo = "Passport photo is required";
-    if (!formData.get("manualClientId")) errors.manualClientId = "Unique Client ID is required";
+    if (!formData.get("manualClientId")) errors.manualClientId = "Admission Number is required";
     if (!formData.get("fullname")) errors.fullname = "Full name is required";
-    if (!formData.get("pob")) errors.pob = "Place of birth is required";
-    if (!formData.get("dob")) errors.dob = "Date of birth is required";
+    if (!formData.get("address")) errors.address = "Current residential address is required";
+    if (!formData.get("tel")) errors.tel = "Contact phone number is required";
+    
+    // Birth fields validation check
+    if (!formData.get("dobMonth")) errors.dobMonth = "Select birth month";
+    if (!formData.get("dobDay")) errors.dobDay = "Select birth day";
+    if (!formData.get("dobYear")) errors.dobYear = "Select birth year";
     if (!formData.get("gender")) errors.gender = "Please select a gender";
-    if (!formData.get("tel")) errors.tel = "Phone number is required";
-    if (!formData.get("occupation")) errors.occupation = "Occupation is required";
-    if (!formData.get("address")) errors.address = "Address is required";
 
-    if (!formData.get("eduPeriod")) errors.eduPeriod = "Years attended layout is required (e.g. 2011-2013)";
-    if (!formData.get("exitStatus")) errors.exitStatus = "Please state your historical student exit status";
-    
-    // Only validate className if the student selected "Graduated"
-    if (exitStatus === "Graduated" && !formData.get("className")) {
-      errors.className = "Please select your graduation class year";
+    // Academic information validations
+    if (!formData.get("yearAdmission")) errors.yearAdmission = "Year of admission is required";
+    if (!formData.get("formAdmitted")) errors.formAdmitted = "Specify form admitted into";
+    if (!formData.get("formAttained")) errors.formAttained = "Specify form completed";
+    if (!formData.get("yearGraduation")) errors.yearGraduation = "Year of graduation or leaving is required";
+
+    // Post-Secondary / Tertiary Information validations (Enforced Required)
+    if (!formData.get("tertiaryCollege") || !formData.get("tertiaryCollege").trim()) {
+      errors.tertiaryCollege = "College or University name is required";
     }
-    
-    if (!formData.get("classOccupied")) errors.classOccupied = "Please specify the classes or streams you occupied";
+    if (!formData.get("tertiaryProgram") || !formData.get("tertiaryProgram").trim()) {
+      errors.tertiaryProgram = "Area of study / program is required";
+    }
+    if (!formData.get("tertiaryQualifications") || !formData.get("tertiaryQualifications").trim()) {
+      errors.tertiaryQualifications = "Attained qualification is required";
+    }
+
+    // Professional status layout verification
+    if (!formData.get("professionalStatus")) errors.professionalStatus = "Please declare your current status";
+    if ((employmentStatus === "Employed" || employmentStatus === "Private Business") && !formData.get("placeOfWork")) {
+      errors.placeOfWork = "Workplace or business address context is required";
+    }
 
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
@@ -158,31 +178,45 @@ export default function RegisterPage() {
       const idDuplicateSnap = await getDocs(idDuplicateQuery);
 
       if (!idDuplicateSnap.empty) {
-        setValidationErrors(prev => ({ ...prev, manualClientId: "This ID is already registered in this system." }));
+        setValidationErrors(prev => ({ ...prev, manualClientId: "This Admission Number is already registered in this system." }));
         setLoading(false);
         return;
       }
 
       const photoURL = await uploadToCloudinary(photo);
 
+      // Consolidate full split structural components into safe flat record formats
+      const fullDobString = `${formData.get("dobMonth")} ${formData.get("dobDay")}, ${formData.get("dobYear")}`;
+
       const clientData = {
         clientId: manualClientId,
         fullname: autoFullname.trim().toUpperCase(),
         orgId: autoOrgId, 
         role: "client",
-        pob: formData.get("pob").trim(),
-        dob: formData.get("dob"),
-        gender: formData.get("gender"),
-        tel: formData.get("tel").replace(/\s+/g, ""),
-        occupation: formData.get("occupation").trim(),
         address: formData.get("address").trim(),
-        eduPeriod: formData.get("eduPeriod").trim(),
-        exitStatus: formData.get("exitStatus"), 
-        // Save graduation year if graduated, otherwise save an empty string or null
-        className: exitStatus === "Graduated" ? formData.get("className") : "",
-        classOccupied: formData.get("classOccupied").trim(),
+        tel: formData.get("tel").replace(/\s+/g, ""),
+        dob: fullDobString,
+        gender: formData.get("gender"),
+
+        // Academic profile fields tracking mapping setup
+        yearAdmission: formData.get("yearAdmission"),
+        formAdmitted: formData.get("formAdmitted").trim(),
+        formAttained: formData.get("formAttained").trim(),
+        yearGraduation: formData.get("yearGraduation"),
+
+        // Higher education fields tracker attributes
+        tertiaryCollege: formData.get("tertiaryCollege").trim(),
+        tertiaryProgram: formData.get("tertiaryProgram").trim(),
+        tertiaryYearEnrolled: formData.get("tertiaryYearEnrolled") || "N/A",
+        tertiaryYearCompleted: formData.get("tertiaryYearCompleted") || "N/A",
+        tertiaryQualifications: formData.get("tertiaryQualifications").trim(),
+
+        // Professional alignment details tracking context variables
+        professionalStatus: formData.get("professionalStatus"),
+        placeOfWork: formData.get("placeOfWork")?.trim() || "N/A",
+
         regCode: verifiedKey,
-        membershipTier: formData.get("membershipTier") || "Standard",
+        membershipTier: "Standard",
         photoURL,
         createdAt: serverTimestamp(),
       };
@@ -190,9 +224,9 @@ export default function RegisterPage() {
       const batch = writeBatch(db);
 
       const newClientRef = doc(collection(db, "clients"));
-      batch.set(newClientRef, clientData);
-
       const regCodeRef = doc(db, "reg_codes", regCodeDoc.id);
+      
+      batch.set(newClientRef, clientData);
       batch.update(regCodeRef, { 
         status: "used",
         usedAt: serverTimestamp(),
@@ -205,7 +239,7 @@ export default function RegisterPage() {
       form.reset();
       setPhotoPreview(null);
       setPhoto(null);
-      setExitStatus("");
+      setEmploymentStatus("");
       setValidationErrors({});
 
     } catch (err) {
@@ -227,8 +261,8 @@ export default function RegisterPage() {
   return (
     <>
       {showKeyModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm">
-          <div className="bg-white p-8 rounded-2xl shadow-xl w-[350px] relative animate-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm px-4">
+          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-xl w-full max-w-[350px] relative animate-in zoom-in-95 duration-300">
             <button
               onClick={closeModal}
               className="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition-colors p-1"
@@ -271,154 +305,277 @@ export default function RegisterPage() {
         </div>
       )}
 
-      <main className="min-h-screen bg-slate-50 flex justify-center px-6 py-10">
-        <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl p-8 border-t-8 border-sky-400">
+      <main className="min-h-screen bg-slate-50 flex justify-center px-4 md:px-6 py-6 md:py-10">
+        <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl p-5 md:p-8 border-t-8 border-sky-400">
 
-          <div className="text-center mb-10">
-            <h1 className="text-3xl font-black text-blue-900 tracking-tighter uppercase">Alumni Membership</h1>
-            <p className="text-gray-500 font-medium">Digital Registration Workspace Portal</p>
+          <div className="text-center mb-8">
+            <h1 className="text-2xl md:text-3xl font-black text-blue-900 tracking-tighter uppercase">PIHS OPA Registration</h1>
+            <p className="text-gray-500 text-sm font-medium">Official Old Pupils Profile Ledger Setup</p>
           </div>
 
-          <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
 
             {/* PHOTO UPLOAD */}
-            <div className="md:col-span-2 flex flex-col items-center pb-4">
-              <div className={`w-32 h-40 rounded-lg border-2 border-dashed overflow-hidden mb-4 bg-gray-50 flex items-center justify-center ${validationErrors.photo ? 'border-red-400' : 'border-blue-200'}`}>
+            <div className="md:col-span-2 flex flex-col items-center pb-2">
+              <div className={`w-32 h-40 rounded-lg border-2 border-dashed overflow-hidden mb-3 bg-gray-50 flex items-center justify-center ${validationErrors.photo ? 'border-red-400' : 'border-blue-200'}`}>
                 {photoPreview ? <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" /> : <span className="text-gray-300 text-xs text-center p-4">Member Photo</span>}
               </div>
               <input id="photo" type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
-              <label htmlFor="photo" className="bg-sky-500 text-white px-6 py-2 rounded-full text-[10px] font-black uppercase cursor-pointer hover:bg-sky-600 transition-all">Upload Photo</label>
+              <label htmlFor="photo" className="bg-sky-500 text-white px-6 py-2 rounded-full text-[10px] font-black uppercase cursor-pointer hover:bg-sky-600 transition-all">Upload Passport</label>
               <InputError name="photo" />
             </div>
 
-            {/* ASSIGN ID */}
-            <div className={`md:col-span-2 p-4 rounded-2xl border ${validationErrors.manualClientId ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-100'}`}>
-              <label className="text-[10px] font-black text-blue-600 uppercase mb-1 flex items-center gap-1">
-                Assign Membership ID <MdFingerprint />
+            {/* SECTION 1: PERSONAL INFORMATION */}
+            <div className="md:col-span-2 text-sky-600 font-black text-[10px] uppercase tracking-[0.2em] border-b pb-1 mb-1 mt-2">
+              Personal Information
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Fullname</label>
+              <input
+                name="fullname"
+                value={autoFullname}
+                readOnly
+                className="input-field bg-gray-100 text-gray-500 cursor-not-allowed"
+              />
+              <InputError name="fullname" />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-black text-blue-600 uppercase mb-1 flex items-center gap-1 ml-1">
+                Admission No (Assigned System ID) <MdFingerprint />
               </label>
               <input
                 name="manualClientId"
                 value={autoMembershipId}
                 readOnly
-                className="input-field border-2 text-blue-800 bg-blue-100"
+                className="input-field border-2 text-blue-800 bg-blue-50/50 font-bold"
               />
               <InputError name="manualClientId" />
             </div>
 
-            {/* PERSONAL DETAILS SECTION */}
-            <div className="md:col-span-2 text-sky-600 font-black text-[10px] uppercase tracking-[0.2em] border-b pb-1 mb-2 mt-4">Personal Details</div>
-
             <div className="md:col-span-2">
-              <input
-                name="fullname"
-                value={autoFullname}
-                readOnly
-                className="input-field bg-gray-100"
-              />
-              <InputError name="fullname" />
-            </div>
-
-            <div>
-              <input name="pob" className="input-field" placeholder="Place of Birth" />
-              <InputError name="pob" />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">
-                Date of Birth
-              </label>
-              <input type="date" name="dob" className="input-field" />
-              <InputError name="dob" />
-            </div>
-
-            <div>
-              <select name="gender" className="input-field">
-                <option value="">Select Gender</option>
-                <option>Male</option>
-                <option>Female</option>
-              </select>
-              <InputError name="gender" />
-            </div>
-
-            <div>
-              <input name="tel" className="input-field" placeholder="Phone Number" />
-              <InputError name="tel" />
-            </div>
-
-            <div className="md:col-span-2">
-              <input name="occupation" className="input-field" placeholder="Occupation" />
-              <InputError name="occupation" />
-            </div>
-
-            <div className="md:col-span-2">
-              <input name="address" className="input-field" placeholder="Residential Address" />
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Current Address</label>
+              <input name="address" className="input-field" placeholder="Enter residential address" />
               <InputError name="address" />
             </div>
 
-            {/* SCHOOL RECORDS SECTION */}
-            <div className="md:col-span-2 text-sky-600 font-black text-[10px] uppercase tracking-[0.2em] border-b pb-1 mt-6 mb-2">
-              School Records <MdSchool className="inline ml-1" />
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Contact Phone Number</label>
+              <input name="tel" className="input-field" placeholder="e.g. +232 XX XXXXXX" />
+              <InputError name="tel" />
             </div>
 
-            <div>
-              <input
-                name="eduPeriod"
-                className="input-field"
-                placeholder="Years Attended (e.g. 2005-2007 or 2011)"
-              />
-              <span className="text-[9px] text-gray-400 block mt-1 ml-1 leading-none">Specify your specific period spent on campus.</span>
-              <InputError name="eduPeriod" />
+            {/* Date of Birth Selection Strings */}
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Date of Birth</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <select name="dobMonth" className="input-field">
+                    <option value="">Month</option>
+                    {calendarMonths.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <InputError name="dobMonth" />
+                </div>
+                <div>
+                  <select name="dobDay" className="input-field">
+                    <option value="">Day</option>
+                    {calendarDays.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <InputError name="dobDay" />
+                </div>
+                <div>
+                  <select name="dobYear" className="input-field">
+                    <option value="">Year</option>
+                    {Array.from({ length: 70 }, (_, i) => 2016 - i).map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                  <InputError name="dobYear" />
+                </div>
+              </div>
             </div>
 
-            {/* Enrollment Exit Status Dropset */}
-            <div>
-              <select 
-                name="exitStatus" 
-                className="input-field"
-                value={exitStatus}
-                onChange={(e) => setExitStatus(e.target.value)}
-              >
-                <option value="">-- Student Exit Type --</option>
-                <option value="Graduated">Completed / Graduated here</option>
-                <option value="Transferred">Transferred out early</option>
-                <option value="Other">Other / Short stay</option>
-              </select>
-              <InputError name="exitStatus" />
-            </div>
-
-            {/* ⭐ CONDITIONAL RENDERING: Only shows if exitStatus === "Graduated" */}
-            {exitStatus === "Graduated" && (
-              <div className="md:col-span-2 transition-all duration-300">
-                <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">
-                  Graduating Class Year
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Gender</label>
+              <div className="flex gap-6 ml-1 mt-2">
+                <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
+                  <input type="radio" name="gender" value="Male" className="accent-sky-500 scale-110" /> Male
                 </label>
-                <select name="className" className="input-field mt-1">
-                  <option value="">-- Select Graduation Year --</option>
-                  {graduationYears.map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-[9px] text-gray-400 block mt-1 ml-1 leading-none">
-                  Select your exact validation assignment batch class.
-                </span>
-                <InputError name="className" />
+                <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
+                  <input type="radio" name="gender" value="Female" className="accent-sky-500 scale-110" /> Female
+                </label>
+              </div>
+              <InputError name="gender" />
+            </div>
+
+            {/* SECTION 2: ACADEMIC INFORMATION */}
+            <div className="md:col-span-2 text-sky-600 font-black text-[10px] uppercase tracking-[0.2em] border-b pb-1 mt-4 mb-1">
+              Academic Information <MdSchool className="inline ml-1 text-sm" />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Year of Admission</label>
+              <select name="yearAdmission" className="input-field">
+                <option value="">Select Year</option>
+                {enrollmentYears.reverse().map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <InputError name="yearAdmission" />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Form Admitted</label>
+              <input name="formAdmitted" className="input-field" placeholder="e.g. JSS 1 / SSS 1" />
+              <InputError name="formAdmitted" />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Form Attained / Completed</label>
+              <input name="formAttained" className="input-field" placeholder="e.g. SSS 3" />
+              <InputError name="formAttained" />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Year of Graduation / Left</label>
+              <select name="yearGraduation" className="input-field">
+                <option value="">Select Year</option>
+                {Array.from({ length: 2026 - 2007 + 1 }, (_, i) => 2007 + i).reverse().map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <InputError name="yearGraduation" />
+            </div>
+
+            {/* SECTION 3: POST-SECONDARY / TERTIARY INFORMATION */}
+            <div className="md:col-span-2 text-sky-600 font-black text-[10px] uppercase tracking-[0.2em] border-b pb-1 mt-4 mb-1">
+              Post-Secondary / Tertiary Information <MdLayers className="inline ml-1 text-sm" />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">College / University Attended</label>
+              <input name="tertiaryCollege" className="input-field" placeholder="Enter institution name" />
+              <InputError name="tertiaryCollege" />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Area of Study / Program</label>
+              <input name="tertiaryProgram" className="input-field" placeholder="e.g. Management Information Systems, Computer Science" />
+              <InputError name="tertiaryProgram" />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Year Enrolled</label>
+              <input name="tertiaryYearEnrolled" type="number" min="1990" max="2026" className="input-field" placeholder="YYYY (Optional)" />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Year Completed</label>
+              <input name="tertiaryYearCompleted" type="number" min="1990" max="2032" className="input-field" placeholder="YYYY (Optional)" />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">Qualification(s) Attained</label>
+              <input name="tertiaryQualifications" className="input-field" placeholder="e.g. BSc, BA, Higher Diploma" />
+              <InputError name="tertiaryQualifications" />
+            </div>
+
+            {/* SECTION 4: PROFESSIONAL STATUS */}
+            <div className="md:col-span-2 text-sky-600 font-black text-[10px] uppercase tracking-[0.2em] border-b pb-1 mt-4 mb-1">
+              Professional Status <MdWork className="inline ml-1 text-sm" />
+            </div>
+
+           <div className="md:col-span-2">
+  <label className="text-[10px] font-bold text-gray-500 uppercase ml-1 block mb-2">
+    Current Status
+  </label>
+
+  <div className="flex flex-wrap gap-4 sm:gap-6 ml-1">
+
+    {/* STUDENT */}
+    <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
+      <input 
+        type="radio" 
+        name="professionalStatus" 
+        value="Student" 
+        className="accent-sky-500 scale-110"
+        onChange={(e) => setEmploymentStatus(e.target.value)} 
+      />
+      Student
+    </label>
+
+    {/* PRIVATE BUSINESS */}
+    <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
+      <input 
+        type="radio" 
+        name="professionalStatus" 
+        value="Private Business" 
+        className="accent-sky-500 scale-110"
+        onChange={(e) => setEmploymentStatus(e.target.value)} 
+      />
+      Private Business
+    </label>
+
+    {/* EMPLOYED */}
+    <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
+      <input 
+        type="radio" 
+        name="professionalStatus" 
+        value="Employed" 
+        className="accent-sky-500 scale-110"
+        onChange={(e) => setEmploymentStatus(e.target.value)} 
+      />
+      Employed
+    </label>
+
+    {/* UNEMPLOYED */}
+    <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
+      <input 
+        type="radio" 
+        name="professionalStatus" 
+        value="Unemployed" 
+        className="accent-sky-500 scale-110"
+        onChange={(e) => setEmploymentStatus(e.target.value)} 
+      />
+      Unemployed
+    </label>
+
+  </div>
+
+  <InputError name="professionalStatus" />
+</div>
+
+            {/* Dynamically display field or change context phrasing cleanly */}
+           {(
+  employmentStatus === "Employed" || 
+  employmentStatus === "Private Business" ||
+  employmentStatus === "Student"
+) && (
+              <div className="md:col-span-2 transition-all duration-300 animate-in fade-in-50 slide-in-from-top-2">
+               <label className="text-[10px] font-bold text-gray-400 uppercase ml-1 block mb-1">
+  {employmentStatus === "Private Business"
+    ? "Business Name"
+    : employmentStatus === "Student"
+    ? "School / College Name"
+    : "Place of Work"}
+</label>
+
+<input 
+  name="placeOfWork" 
+  className="input-field" 
+  placeholder={
+    employmentStatus === "Private Business"
+      ? "Enter business name"
+      : employmentStatus === "Student"
+      ? "Enter school or university name"
+      : "Enter company or office name"
+  } 
+/>
+             
+                <InputError name="placeOfWork" />
               </div>
             )}
 
-            <div className="md:col-span-2">
-              <input 
-                name="classOccupied" 
-                className="input-field" 
-                placeholder="Class Streams Occupied (e.g., SSS 1 Com 1 to SSS 3 Com)" 
-              />
-              <span className="text-[9px] text-gray-400 block mt-1 ml-1 leading-none">
-                Specify the specific streams or arms you transitioned through.
-              </span>
-              <InputError name="classOccupied" />
-            </div>
-
+            {/* SUBMIT BUTTON HANDLERS */}
             {error && (
               <div className="md:col-span-2 flex items-center gap-3 bg-red-50 p-4 rounded-xl border border-red-100">
                 <MdErrorOutline className="text-red-500 text-xl" />
@@ -426,8 +583,8 @@ export default function RegisterPage() {
               </div>
             )}
 
-            <button disabled={loading} className={`md:col-span-2 py-4 rounded-xl font-black text-white uppercase tracking-widest transition-all ${loading ? "bg-gray-300" : "bg-sky-500 hover:bg-sky-600 shadow-lg active:scale-95"}`}>
-              {loading ? "Registering..." : "Complete Registration"}
+            <button disabled={loading} className={`md:col-span-2 py-4 rounded-xl font-black text-white uppercase tracking-widest transition-all ${loading ? "bg-gray-300 cursor-not-allowed" : "bg-sky-500 hover:bg-sky-600 shadow-lg active:scale-95"}`}>
+              {loading ? "Registering Records..." : "Complete Registration"}
             </button>
           </form>
         </div>

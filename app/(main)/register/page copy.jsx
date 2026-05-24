@@ -4,11 +4,11 @@ import { useState } from "react";
 import { db } from "@/app/lib/firebase";
 import { useRouter } from "next/navigation";
 import { 
-  collection, addDoc, serverTimestamp, 
+  collection, serverTimestamp, 
   query, where, getDocs, doc, writeBatch 
 } from "firebase/firestore";
 import imageCompression from 'browser-image-compression';
-import { MdErrorOutline, MdInfoOutline, MdFingerprint, MdWarningAmber, MdSchool } from "react-icons/md";
+import { MdErrorOutline, MdFingerprint, MdWarningAmber, MdSchool } from "react-icons/md";
 import { uploadToCloudinary } from "@/app/lib/cloudinaryUpload";
 import IDCardModal from "../../components/IDCardModal";
 
@@ -28,50 +28,58 @@ export default function RegisterPage() {
 
   const [autoFullname, setAutoFullname] = useState("");
   const [autoMembershipId, setAutoMembershipId] = useState("");
+  const [autoOrgId, setAutoOrgId] = useState("");
+
+  // ⭐ Track state of the exit status to conditionally render the graduation class dropdown
+  const [exitStatus, setExitStatus] = useState("");
+
+  // Generate years array from 2007 to 2025
+  const graduationYears = Array.from({ length: 2025 - 2007 + 1 }, (_, i) => 2007 + i);
 
   const closeModal = () => {
     router.push("/");
   };
- const verifyAccessKey = async () => {
-  setLoading(true);
-  setKeyError("");
 
-  try {
-    const q = query(
-      collection(db, "reg_codes"),
-      where("code", "==", accessKey.trim())
-    );
+  const verifyAccessKey = async () => {
+    setLoading(true);
+    setKeyError("");
 
-    const snap = await getDocs(q);
+    try {
+      const q = query(
+        collection(db, "reg_codes"),
+        where("code", "==", accessKey.trim())
+      );
 
-    if (snap.empty) {
-      setKeyError("Invalid Access Key");
-      setLoading(false);
-      return;
+      const snap = await getDocs(q);
+
+      if (snap.empty) {
+        setKeyError("Invalid Access Key");
+        setLoading(false);
+        return;
+      }
+
+      const docData = snap.docs[0].data();
+
+      if (docData.status === "used") {
+        setKeyError("This key has already been used for registration.");
+        setLoading(false);
+        return;
+      }
+
+      setAutoFullname(docData.assignedTo || "");
+      setAutoMembershipId(docData.membershipId || "");
+      setAutoOrgId(docData.orgId || "SHERGOSA"); 
+
+      setVerifiedKey(accessKey);
+      setShowKeyModal(false);
+
+    } catch (err) {
+      setKeyError("Error verifying key.");
     }
 
-    const docData = snap.docs[0].data();
+    setLoading(false);
+  };
 
-    // ⭐ Check if key is already used
-    if (docData.status === "used") {
-      setKeyError("This key has already been used for registration.");
-      setLoading(false);
-      return;
-    }
-
-    setAutoFullname(docData.assignedTo || "");
-    setAutoMembershipId(docData.membershipId || "");
-
-    setVerifiedKey(accessKey);
-    setShowKeyModal(false);
-
-  } catch (err) {
-    setKeyError("Error verifying key.");
-  }
-
-  setLoading(false);
-};
-  // ⭐ Validation Logic including EduPeriod
   const validateForm = (formData) => {
     const errors = {};
     if (!photo) errors.photo = "Passport photo is required";
@@ -84,12 +92,15 @@ export default function RegisterPage() {
     if (!formData.get("occupation")) errors.occupation = "Occupation is required";
     if (!formData.get("address")) errors.address = "Address is required";
 
-    // ⭐ New validation for Academic fields
-    if (!formData.get("eduPeriod")) errors.eduPeriod = "Educational period is required (e.g. 2005-2011)";
-    if (!formData.get("className")) errors.className = "Graduation year is required";
-
-    if (!formData.get("membershipTier")) errors.membershipTier = "Please select a membership tier";
-    // if (!formData.get("regCode")) errors.regCode = "Registration access key is required";
+    if (!formData.get("eduPeriod")) errors.eduPeriod = "Years attended layout is required (e.g. 2011-2013)";
+    if (!formData.get("exitStatus")) errors.exitStatus = "Please state your historical student exit status";
+    
+    // Only validate className if the student selected "Graduated"
+    if (exitStatus === "Graduated" && !formData.get("className")) {
+      errors.className = "Please select your graduation class year";
+    }
+    
+    if (!formData.get("classOccupied")) errors.classOccupied = "Please specify the classes or streams you occupied";
 
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
@@ -113,97 +124,97 @@ export default function RegisterPage() {
     }
   };
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  const form = e.target;
-  const formData = new FormData(form);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
 
-  if (!validateForm(formData)) {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    return;
-  }
-
-  setLoading(true);
-  setError("");
-
-  try {
-    // 1. Find the specific document ID for the reg_code
-    const codeQuery = query(collection(db, "reg_codes"), where("code", "==", verifiedKey));
-    const codeSnap = await getDocs(codeQuery);
-
-    if (codeSnap.empty) {
-      setError("Registration key no longer valid.");
-      setLoading(false);
+    if (!validateForm(formData)) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
-    const regCodeDoc = codeSnap.docs[0];
+    setLoading(true);
+    setError("");
 
-    // 2. Double-check duplicate Membership ID
-    const manualClientId = formData.get("manualClientId").trim().toUpperCase();
-    const idDuplicateQuery = query(collection(db, "clients"), where("clientId", "==", manualClientId));
-    const idDuplicateSnap = await getDocs(idDuplicateQuery);
+    try {
+      const codeQuery = query(collection(db, "reg_codes"), where("code", "==", verifiedKey));
+      const codeSnap = await getDocs(codeQuery);
 
-    if (!idDuplicateSnap.empty) {
-      setValidationErrors(prev => ({ ...prev, manualClientId: "This ID is already registered." }));
+      if (codeSnap.empty) {
+        setError("Registration key no longer valid.");
+        setLoading(false);
+        return;
+      }
+
+      const regCodeDoc = codeSnap.docs[0];
+      const manualClientId = formData.get("manualClientId").trim().toUpperCase();
+
+      const idDuplicateQuery = query(
+        collection(db, "clients"), 
+        where("orgId", "==", autoOrgId),
+        where("clientId", "==", manualClientId)
+      );
+      const idDuplicateSnap = await getDocs(idDuplicateQuery);
+
+      if (!idDuplicateSnap.empty) {
+        setValidationErrors(prev => ({ ...prev, manualClientId: "This ID is already registered in this system." }));
+        setLoading(false);
+        return;
+      }
+
+      const photoURL = await uploadToCloudinary(photo);
+
+      const clientData = {
+        clientId: manualClientId,
+        fullname: autoFullname.trim().toUpperCase(),
+        orgId: autoOrgId, 
+        role: "client",
+        pob: formData.get("pob").trim(),
+        dob: formData.get("dob"),
+        gender: formData.get("gender"),
+        tel: formData.get("tel").replace(/\s+/g, ""),
+        occupation: formData.get("occupation").trim(),
+        address: formData.get("address").trim(),
+        eduPeriod: formData.get("eduPeriod").trim(),
+        exitStatus: formData.get("exitStatus"), 
+        // Save graduation year if graduated, otherwise save an empty string or null
+        className: exitStatus === "Graduated" ? formData.get("className") : "",
+        classOccupied: formData.get("classOccupied").trim(),
+        regCode: verifiedKey,
+        membershipTier: formData.get("membershipTier") || "Standard",
+        photoURL,
+        createdAt: serverTimestamp(),
+      };
+
+      const batch = writeBatch(db);
+
+      const newClientRef = doc(collection(db, "clients"));
+      batch.set(newClientRef, clientData);
+
+      const regCodeRef = doc(db, "reg_codes", regCodeDoc.id);
+      batch.update(regCodeRef, { 
+        status: "used",
+        usedAt: serverTimestamp(),
+        usedBy: manualClientId
+      });
+
+      await batch.commit();
+
+      setRegisteredClient(clientData);
+      form.reset();
+      setPhotoPreview(null);
+      setPhoto(null);
+      setExitStatus("");
+      setValidationErrors({});
+
+    } catch (err) {
+      console.error("Submit Error:", err);
+      setError("Registration failed. Please try again.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // 3. Upload Photo
-    const photoURL = await uploadToCloudinary(photo);
-
-    // 4. Prepare Data
-    const clientData = {
-      clientId: manualClientId,
-      fullname: autoFullname, // Locked from the key
-      orgId: "SHERGOSA",
-      role: "client",
-      pob: formData.get("pob").trim(),
-      dob: formData.get("dob"),
-      gender: formData.get("gender"),
-      tel: formData.get("tel").replace(/\s+/g, ""),
-      occupation: formData.get("occupation").trim(),
-      address: formData.get("address").trim(),
-      eduPeriod: formData.get("eduPeriod").trim(),
-      className: formData.get("className").trim(),
-      regCode: verifiedKey,
-      membershipTier: formData.get("membershipTier"),
-      photoURL,
-      createdAt: serverTimestamp(),
-    };
-
-    // ⭐ ATOMIC UPDATE: Create Client AND Mark Key as Used
-    const batch = writeBatch(db);
-
-    // Add Client Document
-    const newClientRef = doc(collection(db, "clients"));
-    batch.set(newClientRef, clientData);
-
-    // Update Reg Code Status
-    const regCodeRef = doc(db, "reg_codes", regCodeDoc.id);
-    batch.update(regCodeRef, { 
-      status: "used",
-      usedAt: serverTimestamp(),
-      usedBy: manualClientId
-    });
-
-    // Execute both actions
-    await batch.commit();
-
-    setRegisteredClient(clientData);
-    form.reset();
-    setPhotoPreview(null);
-    setPhoto(null);
-    setValidationErrors({});
-
-  } catch (err) {
-    console.error("Submit Error:", err);
-    setError("Registration failed. Please try again.");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const InputError = ({ name }) => (
     validationErrors[name] ? (
@@ -215,13 +226,9 @@ const handleSubmit = async (e) => {
 
   return (
     <>
-
       {showKeyModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm">
-          {/* Added 'relative' to the div below so the close button anchors correctly */}
           <div className="bg-white p-8 rounded-2xl shadow-xl w-[350px] relative animate-in zoom-in-95 duration-300">
-
-            {/* ❌ CLOSE BUTTON - Redirects to Home */}
             <button
               onClick={closeModal}
               className="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition-colors p-1"
@@ -237,13 +244,13 @@ const handleSubmit = async (e) => {
             </h2>
 
             <p className="text-sm text-gray-500 text-center mb-6">
-              Enter your SHERGOSA registration key to continue
+              Enter your registration key to continue
             </p>
 
             <input
               value={accessKey}
               onChange={(e) => setAccessKey(e.target.value.toUpperCase())}
-              placeholder="SH-XXXXXX"
+              placeholder="PREFIX-XXXXXX"
               className="w-full p-3 border-2 border-blue-50 rounded-lg text-center font-mono tracking-widest focus:border-sky-400 outline-none transition-all"
             />
 
@@ -256,21 +263,20 @@ const handleSubmit = async (e) => {
             <button
               onClick={verifyAccessKey}
               disabled={loading}
-              className={`w-full mt-4 py-3 rounded-lg font-bold text-white transition-all ${loading ? "bg-gray-400" : "bg-sky-500 hover:bg-sky-600 shadow-md active:scale-95"
-                }`}
+              className={`w-full mt-4 py-3 rounded-lg font-bold text-white transition-all ${loading ? "bg-gray-400" : "bg-sky-500 hover:bg-sky-600 shadow-md active:scale-95"}`}
             >
               {loading ? "Checking..." : "Verify Key"}
             </button>
-
           </div>
         </div>
       )}
+
       <main className="min-h-screen bg-slate-50 flex justify-center px-6 py-10">
         <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl p-8 border-t-8 border-sky-400">
 
           <div className="text-center mb-10">
-            <h1 className="text-3xl font-black text-blue-900 tracking-tighter uppercase">SHERGOSA Membership</h1>
-            <p className="text-gray-500 font-medium">SOS Hermann Gmeiner Old Students' Association</p>
+            <h1 className="text-3xl font-black text-blue-900 tracking-tighter uppercase">Alumni Membership</h1>
+            <p className="text-gray-500 font-medium">Digital Registration Workspace Portal</p>
           </div>
 
           <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -297,11 +303,9 @@ const handleSubmit = async (e) => {
                 className="input-field border-2 text-blue-800 bg-blue-100"
               />
               <InputError name="manualClientId" />
-
             </div>
-          
 
-
+            {/* PERSONAL DETAILS SECTION */}
             <div className="md:col-span-2 text-sky-600 font-black text-[10px] uppercase tracking-[0.2em] border-b pb-1 mb-2 mt-4">Personal Details</div>
 
             <div className="md:col-span-2">
@@ -323,13 +327,7 @@ const handleSubmit = async (e) => {
               <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">
                 Date of Birth
               </label>
-
-              <input
-                type="date"
-                name="dob"
-                className="input-field"
-              />
-
+              <input type="date" name="dob" className="input-field" />
               <InputError name="dob" />
             </div>
 
@@ -347,60 +345,79 @@ const handleSubmit = async (e) => {
               <InputError name="tel" />
             </div>
 
-            <div>
-              <input
-                name="occupation"
-                className="input-field"
-                placeholder="Occupation"
-              />
+            <div className="md:col-span-2">
+              <input name="occupation" className="input-field" placeholder="Occupation" />
               <InputError name="occupation" />
             </div>
 
             <div className="md:col-span-2">
-              <input
-                name="address"
-                className="input-field"
-                placeholder="Residential Address"
-              />
+              <input name="address" className="input-field" placeholder="Residential Address" />
               <InputError name="address" />
             </div>
 
-            <div className="md:col-span-2 text-sky-600 font-black text-[10px] uppercase tracking-[0.2em] border-b pb-1 mt-6 mb-2">School Records <MdSchool className="inline ml-1" /></div>
+            {/* SCHOOL RECORDS SECTION */}
+            <div className="md:col-span-2 text-sky-600 font-black text-[10px] uppercase tracking-[0.2em] border-b pb-1 mt-6 mb-2">
+              School Records <MdSchool className="inline ml-1" />
+            </div>
 
-            {/* ⭐ EDUCATIONAL PERIOD FIELD */}
             <div>
               <input
                 name="eduPeriod"
                 className="input-field"
-                placeholder="Edu. Period (e.g. 2005-2011)"
+                placeholder="Years Attended (e.g. 2005-2007 or 2011)"
               />
+              <span className="text-[9px] text-gray-400 block mt-1 ml-1 leading-none">Specify your specific period spent on campus.</span>
               <InputError name="eduPeriod" />
             </div>
-              <div>
-              <input
-                name="schoolAdmissionNumber"
+
+            {/* Enrollment Exit Status Dropset */}
+            <div>
+              <select 
+                name="exitStatus" 
                 className="input-field"
-                placeholder="School Admission Number"
-              />
-              <InputError name="schoolAdmissionNumber" />
+                value={exitStatus}
+                onChange={(e) => setExitStatus(e.target.value)}
+              >
+                <option value="">-- Student Exit Type --</option>
+                <option value="Graduated">Completed / Graduated here</option>
+                <option value="Transferred">Transferred out early</option>
+                <option value="Other">Other / Short stay</option>
+              </select>
+              <InputError name="exitStatus" />
             </div>
 
-            <div>
-              <input name="className" className="input-field" placeholder="Graduating Class (Year)" />
-              <InputError name="className" />
-            </div>
+            {/* ⭐ CONDITIONAL RENDERING: Only shows if exitStatus === "Graduated" */}
+            {exitStatus === "Graduated" && (
+              <div className="md:col-span-2 transition-all duration-300">
+                <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">
+                  Graduating Class Year
+                </label>
+                <select name="className" className="input-field mt-1">
+                  <option value="">-- Select Graduation Year --</option>
+                  {graduationYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[9px] text-gray-400 block mt-1 ml-1 leading-none">
+                  Select your exact validation assignment batch class.
+                </span>
+                <InputError name="className" />
+              </div>
+            )}
 
             <div className="md:col-span-2">
-              <select name="membershipTier" className="input-field bg-gray-50">
-                <option value="">-- Choose Membership Tier --</option>
-                <option value="Regular">Regular Member</option>
-                <option value="Gold">Gold Member</option>
-                <option value="Platinum">Platinum Member</option>
-              </select>
-              <InputError name="membershipTier" />
+              <input 
+                name="classOccupied" 
+                className="input-field" 
+                placeholder="Class Streams Occupied (e.g., SSS 1 Com 1 to SSS 3 Com)" 
+              />
+              <span className="text-[9px] text-gray-400 block mt-1 ml-1 leading-none">
+                Specify the specific streams or arms you transitioned through.
+              </span>
+              <InputError name="classOccupied" />
             </div>
-
-
 
             {error && (
               <div className="md:col-span-2 flex items-center gap-3 bg-red-50 p-4 rounded-xl border border-red-100">

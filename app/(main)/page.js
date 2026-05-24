@@ -1,9 +1,15 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-// Imported the central news dataset file
-import { newsData } from "@/app/data/newsData"; 
+
+// 1. Firebase Imports for DB Syncing
+import { db } from "@/app/lib/firebase";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+
+// Central backup dataset file
+import { newsData as fallbackNewsData } from "@/app/data/newsData"; 
 
 import {
   FaGraduationCap,
@@ -13,11 +19,11 @@ import {
   FaAward,
   FaArrowRight,
   FaCalendarAlt,
-  FaDonate,
   FaMapMarkerAlt,
   FaUserAlt,
   FaClock,
   FaNewspaper,
+  FaPlayCircle,
 } from "react-icons/fa";
 
 import { motion } from "framer-motion";
@@ -47,7 +53,6 @@ const aimsAndObjectivesHome = [
   },
 ];
 
-// Activities Array
 const activities = [
   {
     title: "3rd General Meeting",
@@ -68,23 +73,55 @@ const activities = [
 ];
 
 export default function HomePage() {
+  // 2. State hooks to manage unified feed listing
+  const [newsFeed, setNewsFeed] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // 3. Realtime sub loop hook fetching live updates from Firebase
+  useEffect(() => {
+    const newsRef = collection(db, "news");
+    const newsQuery = query(newsRef, orderBy("createdAt", "desc"));
+
+    const unsubscribe = onSnapshot(newsQuery, 
+      (snapshot) => {
+        const liveItems = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        // Merge live DB data ahead of our static array backup elements
+        if (liveItems.length > 0) {
+          setNewsFeed([...liveItems, ...fallbackNewsData]);
+        } else {
+          setNewsFeed(fallbackNewsData);
+        }
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error("Error loading updates from Firestore:", error);
+        // Fallback gracefully on local asset array if permissions drop
+        setNewsFeed(fallbackNewsData);
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   return (
     <main className="overflow-hidden bg-white w-full">
 
       {/* HERO SECTION */}
       <section className="relative min-h-screen flex items-center justify-center py-20 sm:py-24 px-4 sm:px-6 overflow-hidden">
-        {/* Background Image */}
         <div
           className="absolute inset-0 bg-cover bg-center scale-110 animate-wave"
           style={{ backgroundImage: "url('/images/school-bg.jpg')" }}
         />
         <div className="absolute inset-0 bg-sky-950/80" />
 
-        {/* Decorative Background Circles */}
         <div className="hidden sm:block absolute top-10 left-10 w-72 h-72 bg-sky-400/20 rounded-full blur-3xl animate-float" />
         <div className="hidden sm:block absolute bottom-10 right-10 w-96 h-96 bg-cyan-300/20 rounded-full blur-3xl animate-float" />
 
-        {/* Content */}
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
@@ -93,7 +130,6 @@ export default function HomePage() {
         >
           <div className="backdrop-blur-lg bg-white/10 border border-white/20 rounded-[24px] sm:rounded-[40px] shadow-2xl p-6 sm:p-10 md:p-16 text-center">
             
-            {/* Logo */}
             <motion.div
               animate={{ y: [0, -10, 0] }}
               transition={{ duration: 4, repeat: Infinity }}
@@ -110,7 +146,6 @@ export default function HomePage() {
               </div>
             </motion.div>
 
-            {/* Heading */}
             <h1 className="text-3xl sm:text-5xl md:text-6xl font-black text-white leading-tight">
               Welcome to <br />
               <span className="bg-gradient-to-r from-sky-300 to-cyan-200 bg-clip-text text-transparent block mt-2">
@@ -118,12 +153,10 @@ export default function HomePage() {
               </span>
             </h1>
 
-            {/* Subtitle */}
             <p className="mt-4 sm:mt-6 text-sm sm:text-lg md:text-xl text-sky-100 max-w-2xl mx-auto leading-relaxed">
               A united platform for former students of Providence International High School to reconnect, inspire, support current students, and strengthen the alumni community.
             </p>
 
-            {/* Buttons */}
             <div className="mt-8 sm:mt-10 flex flex-col sm:flex-row justify-center items-center gap-4 sm:gap-5">
               <Link
                 href="/about"
@@ -142,7 +175,6 @@ export default function HomePage() {
           </div>
         </motion.div>
 
-        {/* Bottom Wave Divider */}
         <div className="absolute bottom-0 left-0 w-full overflow-hidden leading-none z-10">
           <svg className="relative block w-full h-[50px] sm:h-[90px] md:h-[120px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320" preserveAspectRatio="none">
             <path fill="#ffffff" fillOpacity="1" d="M0,96L80,122.7C160,149,320,203,480,208C640,213,800,171,960,144C1120,117,1280,107,1360,101.3L1440,96L1440,320L1360,320C1280,320,1120,320,960,320C800,320,640,320,480,320C320,320,160,320,80,320L0,320Z" />
@@ -214,7 +246,6 @@ export default function HomePage() {
             Stay updated and participate in our upcoming community meetings and functions.
           </p>
 
-          {/* 20th Anniversary Special Announcement Card */}
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             whileInView={{ opacity: 1, scale: 1 }}
@@ -243,7 +274,6 @@ export default function HomePage() {
             </Link>
           </motion.div>
 
-          {/* Activity Cards List */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
             {activities.map((event, index) => (
               <div key={index} className="bg-white rounded-2xl sm:rounded-3xl shadow-md p-6 sm:p-8 border border-sky-100 transition duration-300 hover:shadow-xl flex flex-col justify-between">
@@ -280,7 +310,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* NEW LATEST NEWS & UPDATES SECTION */}
+      {/* LATEST NEWS & UPDATES SECTION */}
       <section className="py-16 sm:py-24 px-4 sm:px-6 bg-white">
         <div className="max-w-7xl mx-auto">
           
@@ -303,59 +333,80 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* News Card Grid Layout pointing directly to imported data file variables */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
-            {newsData.map((item, index) => (
-              <motion.article 
-                key={item.id}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1, duration: 0.5 }}
-                className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col group hover:shadow-xl transition-all duration-300"
-              >
-                {/* News Image Header Container */}
-                <div className="relative h-48 w-full bg-slate-100 overflow-hidden">
-                  {/* Category Tag overlayed on image */}
-                  <span className="absolute top-4 left-4 z-10 bg-sky-600/90 backdrop-blur-sm text-white font-bold text-xs uppercase tracking-wider px-3 py-1 rounded-md">
-                    {item.category}
-                  </span>
-                  {/* Next.js Image Component */}
-                  <Image 
-                    src={item.image} 
-                    alt={item.title}
-                    fill
-                    className="object-cover group-hover:scale-105 transition-transform duration-500"
-                    sizes="(max-w-768px) 100vw, (max-w-1200px) 50vw, 33vw"
-                  />
-                </div>
-
-                {/* News Content Body Box */}
-                <div className="p-6 flex flex-col flex-1">
-                  <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2 block">
-                    {item.date}
-                  </span>
-                  <h3 className="text-lg font-black text-slate-800 leading-snug group-hover:text-sky-600 transition-colors line-clamp-2 mb-3">
-                    {item.title}
-                  </h3>
-                  <p className="text-gray-600 text-sm leading-relaxed line-clamp-3 mb-6">
-                    {item.excerpt}
-                  </p>
-
-                  {/* Read Full Note Anchor Button */}
-                  <div className="mt-auto pt-4 border-t border-slate-50">
-                    <Link 
-                      href={`/news/${item.id}`}
-                      className="inline-flex items-center gap-2 text-sky-600 hover:text-sky-800 font-bold text-sm uppercase tracking-wider group/link"
-                    >
-                      Read Full Story
-                      <FaArrowRight className="text-[10px] transform group-hover/link:translate-x-1 transition-transform" />
-                    </Link>
+          {/* 4. Real-time Database Rendering Layout Handler */}
+          {isLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+              {[1, 2, 3].map((skeleton) => (
+                <div key={skeleton} className="animate-pulse bg-slate-50 border border-slate-100 rounded-2xl h-96 w-full" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+              {newsFeed.map((item, index) => (
+                <motion.article 
+                  key={item.id}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: index * 0.1, duration: 0.5 }}
+                  className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col group hover:shadow-xl transition-all duration-300"
+                >
+                  {/* News Media Container */}
+                  <div className="relative h-48 w-full bg-slate-100 overflow-hidden">
+                    <span className="absolute top-4 left-4 z-10 bg-sky-600/90 backdrop-blur-sm text-white font-bold text-xs uppercase tracking-wider px-3 py-1 rounded-md">
+                      {item.category}
+                    </span>
+                    
+                    {/* 5. Smart Conditional rendering for Image vs Video Posts */}
+                    {item.type === "video" || item.videoUrl ? (
+                      <div className="relative w-full h-full bg-black flex items-center justify-center">
+                        <video 
+                          src={item.videoUrl || item.video} 
+                          className="w-full h-full object-cover opacity-80"
+                          muted
+                          preload="metadata"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition">
+                          <FaPlayCircle className="text-white text-5xl opacity-90 drop-shadow-md group-hover:scale-110 transition-transform" />
+                        </div>
+                      </div>
+                    ) : (
+                      <Image 
+                        src={item.imageUrl || item.image || "/images/pihs-meeting1.jpeg"} 
+                        alt={item.title}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-500"
+                        sizes="(max-w-768px) 100vw, (max-w-1200px) 50vw, 33vw"
+                      />
+                    )}
                   </div>
-                </div>
-              </motion.article>
-            ))}
-          </div>
+
+                  {/* News Content Body */}
+                  <div className="p-6 flex flex-col flex-1">
+                    <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2 block">
+                      {item.date}
+                    </span>
+                    <h3 className="text-lg font-black text-slate-800 leading-snug group-hover:text-sky-600 transition-colors line-clamp-2 mb-3">
+                      {item.title}
+                    </h3>
+                    <p className="text-gray-600 text-sm leading-relaxed line-clamp-3 mb-6">
+                      {item.excerpt}
+                    </p>
+
+                    <div className="mt-auto pt-4 border-t border-slate-50">
+                      <Link 
+                        href={`/news/${item.id}`}
+                        className="inline-flex items-center gap-2 text-sky-600 hover:text-sky-800 font-bold text-sm uppercase tracking-wider group/link"
+                      >
+                        Read Full Story
+                        <FaArrowRight className="text-[10px] transform group-hover/link:translate-x-1 transition-transform" />
+                      </Link>
+                    </div>
+                  </div>
+                </motion.article>
+              ))}
+            </div>
+          )}
 
         </div>
       </section>
