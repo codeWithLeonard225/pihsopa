@@ -73,10 +73,11 @@ const activities = [
 ];
 
 export default function HomePage() {
-  // OPTIMIZATION: Seed the state immediately with fallback data so the layout renders instantly
-  const [newsFeed, setNewsFeed] = useState(fallbackNewsData);
+  // 2. State hooks to manage unified feed listing
+  const [newsFeed, setNewsFeed] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Realtime sub loop hook fetching live updates from Firebase
+  // 3. Realtime sub loop hook fetching live updates from Firebase
   useEffect(() => {
     const newsRef = collection(db, "news");
     const newsQuery = query(newsRef, orderBy("createdAt", "desc"));
@@ -88,15 +89,19 @@ export default function HomePage() {
           ...doc.data()
         }));
 
-        // Merge live DB data ahead of our static array backup elements safely
+        // Merge live DB data ahead of our static array backup elements
         if (liveItems.length > 0) {
           setNewsFeed([...liveItems, ...fallbackNewsData]);
         } else {
           setNewsFeed(fallbackNewsData);
         }
+        setIsLoading(false);
       },
       (error) => {
         console.error("Error loading updates from Firestore:", error);
+        // Fallback gracefully on local asset array if permissions drop
+        setNewsFeed(fallbackNewsData);
+        setIsLoading(false);
       }
     );
 
@@ -328,71 +333,80 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* Renders instantly now using fallback dataset, updating silently in background when Firebase finishes */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
-            {newsFeed.map((item, index) => (
-              <motion.article 
-                key={item.id || index}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1, duration: 0.5 }}
-                className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col group hover:shadow-xl transition-all duration-300"
-              >
-                {/* News Media Container */}
-                <div className="relative h-48 w-full bg-slate-100 overflow-hidden">
-                  <span className="absolute top-4 left-4 z-10 bg-sky-600/90 backdrop-blur-sm text-white font-bold text-xs uppercase tracking-wider px-3 py-1 rounded-md">
-                    {item.category}
-                  </span>
-                  
-                  {item.type === "video" || item.videoUrl ? (
-                    <div className="relative w-full h-full bg-black flex items-center justify-center">
-                      <video 
-                        src={item.videoUrl || item.video} 
-                        className="w-full h-full object-cover opacity-80"
-                        muted
-                        preload="metadata"
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition">
-                        <FaPlayCircle className="text-white text-5xl opacity-90 drop-shadow-md group-hover:scale-110 transition-transform" />
+          {/* 4. Real-time Database Rendering Layout Handler */}
+          {isLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+              {[1, 2, 3].map((skeleton) => (
+                <div key={skeleton} className="animate-pulse bg-slate-50 border border-slate-100 rounded-2xl h-96 w-full" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+              {newsFeed.map((item, index) => (
+                <motion.article 
+                  key={item.id}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: index * 0.1, duration: 0.5 }}
+                  className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col group hover:shadow-xl transition-all duration-300"
+                >
+                  {/* News Media Container */}
+                  <div className="relative h-48 w-full bg-slate-100 overflow-hidden">
+                    <span className="absolute top-4 left-4 z-10 bg-sky-600/90 backdrop-blur-sm text-white font-bold text-xs uppercase tracking-wider px-3 py-1 rounded-md">
+                      {item.category}
+                    </span>
+                    
+                    {/* 5. Smart Conditional rendering for Image vs Video Posts */}
+                    {item.type === "video" || item.videoUrl ? (
+                      <div className="relative w-full h-full bg-black flex items-center justify-center">
+                        <video 
+                          src={item.videoUrl || item.video} 
+                          className="w-full h-full object-cover opacity-80"
+                          muted
+                          preload="metadata"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition">
+                          <FaPlayCircle className="text-white text-5xl opacity-90 drop-shadow-md group-hover:scale-110 transition-transform" />
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <Image 
-                      src={item.imageUrl || item.image || "/images/pihs-meeting1.jpeg"} 
-                      alt={item.title}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-500"
-                      sizes="(max-w-768px) 100vw, (max-w-1200px) 50vw, 33vw"
-                    />
-                  )}
-                </div>
-
-                {/* News Content Body */}
-                <div className="p-6 flex flex-col flex-1">
-                  <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2 block">
-                    {item.date}
-                  </span>
-                  <h3 className="text-lg font-black text-slate-800 leading-snug group-hover:text-sky-600 transition-colors line-clamp-2 mb-3">
-                    {item.title}
-                  </h3>
-                  <p className="text-gray-600 text-sm leading-relaxed line-clamp-3 mb-6">
-                    {item.excerpt}
-                  </p>
-
-                  <div className="mt-auto pt-4 border-t border-slate-50">
-                    <Link 
-                      href={`/news/${item.id}`}
-                      className="inline-flex items-center gap-2 text-sky-600 hover:text-sky-800 font-bold text-sm uppercase tracking-wider group/link"
-                    >
-                      Read Full Story
-                      <FaArrowRight className="text-[10px] transform group-hover/link:translate-x-1 transition-transform" />
-                    </Link>
+                    ) : (
+                      <Image 
+                        src={item.imageUrl || item.image || "/images/pihs-meeting1.jpeg"} 
+                        alt={item.title}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-500"
+                        sizes="(max-w-768px) 100vw, (max-w-1200px) 50vw, 33vw"
+                      />
+                    )}
                   </div>
-                </div>
-              </motion.article>
-            ))}
-          </div>
+
+                  {/* News Content Body */}
+                  <div className="p-6 flex flex-col flex-1">
+                    <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2 block">
+                      {item.date}
+                    </span>
+                    <h3 className="text-lg font-black text-slate-800 leading-snug group-hover:text-sky-600 transition-colors line-clamp-2 mb-3">
+                      {item.title}
+                    </h3>
+                    <p className="text-gray-600 text-sm leading-relaxed line-clamp-3 mb-6">
+                      {item.excerpt}
+                    </p>
+
+                    <div className="mt-auto pt-4 border-t border-slate-50">
+                      <Link 
+                        href={`/news/${item.id}`}
+                        className="inline-flex items-center gap-2 text-sky-600 hover:text-sky-800 font-bold text-sm uppercase tracking-wider group/link"
+                      >
+                        Read Full Story
+                        <FaArrowRight className="text-[10px] transform group-hover/link:translate-x-1 transition-transform" />
+                      </Link>
+                    </div>
+                  </div>
+                </motion.article>
+              ))}
+            </div>
+          )}
 
         </div>
       </section>
