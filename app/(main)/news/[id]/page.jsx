@@ -1,5 +1,6 @@
 "use client";
 
+// app/(main)/news/[id]/page.jsx
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -27,17 +28,12 @@ import {
   FaArrowLeft,
   FaCalendarAlt,
   FaTag,
-  FaArrowRight,
   FaWhatsapp,
   FaHeart,
   FaRegHeart,
   FaEye,
-  FaPlayCircle,
-  FaEdit,
-  FaTrash,
+  FaImages, // Imported for the gallery block section heading
 } from "react-icons/fa";
-
-import { motion } from "framer-motion";
 
 export default function NewsArticlePage() {
   const params = useParams();
@@ -111,7 +107,7 @@ export default function NewsArticlePage() {
           );
         }
 
-        setLoadingArticle(false);
+        loadingArticle && setLoadingArticle(false);
       },
       (error) => {
         console.error("Error fetching article from Firestore, checking local backup...", error);
@@ -351,6 +347,33 @@ export default function NewsArticlePage() {
             <div className="text-gray-700 text-base sm:text-lg leading-relaxed space-y-6 whitespace-pre-line font-medium">
               {article.content}
             </div>
+
+            {/* --- NEW ADDED SECTION: DYNAMIC ARTICLE GALLERY GRID --- */}
+            {article.gallery && article.gallery.length > 0 && (
+              <div className="mt-12 pt-8 border-t border-slate-100">
+                <h3 className="text-lg sm:text-xl font-black text-slate-800 mb-6 flex items-center gap-2.5">
+                  <FaImages className="text-sky-600 text-xl" /> Event Photo Gallery
+                </h3>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {article.gallery.map((imgUrl, idx) => (
+                    <div 
+                      key={idx} 
+                      className="relative aspect-square sm:aspect-video rounded-2xl overflow-hidden shadow-inner bg-slate-100 border border-slate-100 group"
+                    >
+                      <Image
+                        src={imgUrl}
+                        alt={`Gallery photo ${idx + 1} for ${article.title}`}
+                        fill
+                        sizes="(max-width: 640px) 50vw, 25vw"
+                        className="object-cover group-hover:scale-105 transition-transform duration-500 ease-out cursor-zoom-in"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
           </div>
         </article>
 
@@ -382,7 +405,7 @@ export default function NewsArticlePage() {
           </div>
         </section>
 
-      {/* RELATED NEWS SECTION */}
+        {/* RELATED NEWS SECTION */}
         {relatedNews.length > 0 && (
           <section className="mt-16">
             <h2 className="text-2xl font-black text-slate-800 mb-6">More Stories</h2>

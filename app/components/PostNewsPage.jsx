@@ -2,13 +2,65 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FaImage, FaVideo, FaHeading, FaTag, FaFileAlt, FaArrowLeft, FaCloudUploadAlt } from "react-icons/fa";
+import { 
+  FaImage, FaVideo, FaHeading, FaTag, FaFileAlt, 
+  FaArrowLeft, FaCloudUploadAlt, FaImages, FaTimes 
+} from "react-icons/fa";
 import Link from "next/link";
 import { uploadToCloudinary } from "@/app/lib/cloudinaryUpload";
 
 // --- FIREBASE IMPORTS ---
 import { db } from "@/app/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+
+/* =====================================================
+    LIGHTWEIGHT CLIENT-SIDE IMAGE COMPRESSION HELPER
+====================================================== */
+const compressImage = (file, maxWidth = 1200, quality = 0.75) => {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith("image/")) {
+      return resolve(file); // Don't compress video files
+    }
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new window.Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+
+        // Calculate aspect ratio resizing bounds
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) return resolve(file);
+            // Convert blob back into a file object
+            const compressedFile = new File([blob], file.name, {
+              type: file.type,
+              lastModified: Date.now(),
+            });
+            resolve(compressedFile);
+          },
+          file.type,
+          quality
+        );
+      };
+    };
+  });
+};
 
 export default function PostNewsPage() {
   const router = useRouter();
@@ -18,26 +70,47 @@ export default function PostNewsPage() {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("PIHSOPA Update");
   const [selectedFile, setSelectedFile] = useState(null);
-  
-  // --- ADDED STATE FOR CUSTOM CATEGORIES ---
   const [customCategory, setCustomCategory] = useState("");
-  
   const [excerpt, setExcerpt] = useState("");
   const [content, setContent] = useState("");
   
+  // --- NEW STATES FOR MULTIPLE GALLERY IMAGES ---
+  const [galleryFiles, setGalleryFiles] = useState([]);
+  const [galleryPreviews, setGalleryPreviews] = useState([]);
+
   // Media states
   const [previewUrl, setPreviewUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Handle local file uploads for previewing
+  // Handle main cover media upload for previewing
   const handleMediaChange = (e) => {
     const file = e.target.files[0];
-
     if (file) {
       setSelectedFile(file);
       const preview = URL.createObjectURL(file);
       setPreviewUrl(preview);
     }
+  };
+
+  // --- HANDLE MULTIPLE GALLERY FILES ---
+  const handleGalleryChange = (e) => {
+    const files = Array.from(e.target.files);
+    
+    // Combine existing files with newly chosen ones
+    const updatedFiles = [...galleryFiles, ...files];
+    setGalleryFiles(updatedFiles);
+
+    // Create and append local object URLs for previews
+    const newPreviews = files.map(file => URL.createObjectURL(file));
+    setGalleryPreviews([...galleryPreviews, ...newPreviews]);
+  };
+
+  // --- REMOVE A SINGLE PHOTO FROM THE GALLERY PREVIEW ---
+  const removeGalleryImage = (index) => {
+    const updatedFiles = galleryFiles.filter((_, i) => i !== index);
+    const updatedPreviews = galleryPreviews.filter((_, i) => i !== index);
+    setGalleryFiles(updatedFiles);
+    setGalleryPreviews(updatedPreviews);
   };
 
   // Handle form submission
@@ -48,9 +121,7 @@ export default function PostNewsPage() {
       return;
     }
 
-    // Determine the final category value to save
     const finalCategory = category === "Custom" ? customCategory.trim() : category;
-
     if (category === "Custom" && !finalCategory) {
       alert("Please enter a custom category name.");
       return;
@@ -60,17 +131,50 @@ export default function PostNewsPage() {
 
     try {
       let uploadedUrl = "";
+      let uploadedGalleryUrls = [];
 
-      // Upload file to Cloudinary if one is selected
+      // 1. Compress cover photo and gallery photos simultaneously in browser
+      const compressPromises = [];
+      
       if (selectedFile) {
-        // Pass the raw file binary and the format type ("image" or "video")
-        uploadedUrl = await uploadToCloudinary(selectedFile, postType);
+        compressPromises.push(compressImage(selectedFile).then(res => ({ type: 'cover', file: res })));
       }
+      
+      if (postType === "image" && galleryFiles.length > 0) {
+        galleryFiles.forEach((file) => {
+          compressPromises.push(compressImage(file).then(res => ({ type: 'gallery', file: res })));
+        });
+      }
+
+      // Execute all localized resizing tasks down to minimal payloads
+      const compressedResults = await Promise.all(compressPromises);
+      
+      const readyCover = compressedResults.find(r => r.type === 'cover')?.file || selectedFile;
+      const readyGallery = compressedResults.filter(r => r.type === 'gallery').map(r => r.file);
+
+      // 2. Upload cover and gallery in parallel to Cloudinary
+      const uploadPromises = [];
+
+      if (readyCover) {
+        uploadPromises.push(uploadToCloudinary(readyCover, postType).then(url => ({ type: 'cover', url })));
+      }
+
+      if (postType === "image" && readyGallery.length > 0) {
+        readyGallery.forEach((file) => {
+          uploadPromises.push(uploadToCloudinary(file, "image").then(url => ({ type: 'gallery', url })));
+        });
+      }
+
+      // Stream data channels concurrently 
+      const uploadResults = await Promise.all(uploadPromises);
+
+      uploadedUrl = uploadResults.find(r => r.type === 'cover')?.url || "";
+      uploadedGalleryUrls = uploadResults.filter(r => r.type === 'gallery').map(r => r.url);
 
       const options = { year: 'numeric', month: 'long', day: 'numeric' };
       const formattedDate = new Date().toLocaleDateString('en-US', options);
 
-      // Structure the payload for Firestore using the Cloudinary secure URL
+      // Structure payload for Firestore
       const newPostData = {
         title,
         date: formattedDate,
@@ -78,9 +182,9 @@ export default function PostNewsPage() {
         excerpt,
         content,
         type: postType,
-        // Fallback to defaults if no file was uploaded
         image: postType === "image" ? (uploadedUrl || "/images/pihs-meeting1.jpeg") : null,
         video: postType === "video" ? (uploadedUrl || "https://www.w3schools.com/html/mov_bbb.mp4") : null,
+        gallery: uploadedGalleryUrls,
         createdAt: serverTimestamp()
       };
 
@@ -88,14 +192,16 @@ export default function PostNewsPage() {
       await addDoc(newsCollectionRef, newPostData);
 
       setIsSubmitting(false);
-      alert("News Published Successfully!");
+      alert("News & Gallery Published Successfully!");
 
-      // Reset state form fields
+      // Reset form fields
       setTitle("");
       setExcerpt("");
       setContent("");
       setSelectedFile(null);
       setPreviewUrl("");
+      setGalleryFiles([]);
+      setGalleryPreviews([]);
       setCategory("PIHSOPA Update");
       setCustomCategory(""); 
       setPostType("image");
@@ -144,7 +250,7 @@ export default function PostNewsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setPostType("video"); setPreviewUrl(""); setSelectedFile(null); }}
+                  onClick={() => { setPostType("video"); setPreviewUrl(""); setSelectedFile(null); setGalleryFiles([]); setGalleryPreviews([]); }}
                   className={`flex items-center justify-center gap-3 p-4 rounded-xl border-2 font-bold text-base transition-all ${
                     postType === "video"
                       ? "border-sky-500 bg-sky-50 text-sky-700"
@@ -178,9 +284,7 @@ export default function PostNewsPage() {
               <label className="flex items-center gap-2 text-slate-700 font-bold text-sm mb-2">
                 <FaTag className="text-slate-400" /> Category Type
               </label>
-
               <div className="space-y-3">
-                {/* Dropdown */}
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
@@ -193,7 +297,6 @@ export default function PostNewsPage() {
                   <option value="Custom">+ Add Custom Category</option>
                 </select>
 
-                {/* Custom Input Field */}
                 {category === "Custom" && (
                   <input
                     type="text"
@@ -207,18 +310,17 @@ export default function PostNewsPage() {
               </div>
             </div>
 
-            {/* DYNAMIC MEDIA UPLOAD FIELD BOX */}
+            {/* COVER MEDIA UPLOAD FIELD BOX */}
             <div>
               <label className="block text-slate-700 font-bold text-sm mb-2">
-                {postType === "image" ? "Upload Article Photo" : "Upload Video File"}
+                {postType === "image" ? "Main Article Cover Photo *" : "Featured Video File *"}
               </label>
-              
               <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-200 border-dashed rounded-xl hover:border-sky-400 transition bg-slate-50">
                 <div className="space-y-1 text-center">
                   <FaCloudUploadAlt className="mx-auto h-12 w-12 text-slate-400" />
-                  <div className="flex text-sm text-slate-600">
+                  <div className="flex text-sm text-slate-600 justify-center">
                     <label className="relative cursor-pointer bg-white rounded-md font-bold text-sky-600 hover:text-sky-500 focus-within:outline-none">
-                      <span>Upload file resource</span>
+                      <span>Upload cover resource</span>
                       <input 
                         type="file" 
                         className="sr-only" 
@@ -233,10 +335,9 @@ export default function PostNewsPage() {
                 </div>
               </div>
 
-              {/* Real-time Dynamic Media Preview box */}
               {previewUrl && (
                 <div className="mt-4 p-2 bg-slate-100 rounded-xl">
-                  <p className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">Live Stream Upload Preview File:</p>
+                  <p className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">Cover File Preview:</p>
                   {postType === "image" ? (
                     <img src={previewUrl} alt="Preview Upload" className="max-h-48 w-full object-cover rounded-lg" />
                   ) : (
@@ -245,6 +346,63 @@ export default function PostNewsPage() {
                 </div>
               )}
             </div>
+
+            {/* --- GALLERY INPUT SECTION --- */}
+            {postType === "image" && (
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
+                <label className="flex items-center gap-2 text-slate-700 font-bold text-sm mb-1">
+                  <FaImages className="text-sky-600" /> Additional Article Gallery Photos (Optional)
+                </label>
+                <p className="text-xs text-slate-400 mb-4">
+                  Upload multiple photos (recommended: 4 or more) to display at the bottom of your article layout.
+                </p>
+                
+                <div className="flex items-center justify-center w-full">
+                  <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-white hover:bg-slate-50/50 transition">
+                    <div className="pt-5 pb-6 text-center">
+                      <p className="text-sm text-sky-600 font-bold">Click to add multiple files</p>
+                    </div>
+                    <input 
+                      type="file" 
+                      multiple 
+                      className="hidden" 
+                      accept="image/*"
+                      onChange={handleGalleryChange}
+                    />
+                  </label>
+                </div>
+
+                {/* Grid Preview Display */}
+                {galleryPreviews.length > 0 && (
+                  <div>
+                    <div className="flex justify-between items-center mt-4 mb-2">
+                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                        Gallery Queue ({galleryPreviews.length} selected):
+                      </span>
+                      {galleryPreviews.length < 4 && (
+                        <span className="text-xs text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-md">
+                          Tip: Add {4 - galleryPreviews.length} more to meet your target of 4 photos!
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {galleryPreviews.map((preview, index) => (
+                        <div key={index} className="relative aspect-square rounded-xl overflow-hidden shadow-inner bg-slate-200 group">
+                          <img src={preview} alt="Gallery thumb preview" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => removeGalleryImage(index)}
+                            className="absolute top-1.5 right-1.5 bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full shadow transition active:scale-90"
+                          >
+                            <FaTimes className="text-xs" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* SHORT EXCERPT SUMMARY */}
             <div>
@@ -283,7 +441,7 @@ export default function PostNewsPage() {
                 disabled={isSubmitting}
                 className="w-full bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-700 hover:to-cyan-700 text-white font-black text-lg py-4 rounded-xl transition duration-300 shadow-md disabled:opacity-50"
               >
-                {isSubmitting ? "Uploading Media & Publishing..." : "Publish Live News Update"}
+                {isSubmitting ? "Uploading Assets & Publishing..." : "Publish Live News Update"}
               </button>
             </div>
 

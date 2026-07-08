@@ -1,13 +1,15 @@
+// app/(main)/news/page.jsx
 import Link from 'next/link';
 import { FaCalendarAlt, FaBullhorn, FaUsers, FaArrowRight, FaClock, FaMapMarkerAlt } from 'react-icons/fa';
-import { allNewsData } from '@/app/data/allNewsData';
+
+// Standardize dataset source to match homepage and detail page configurations
+import { newsData as allNewsData } from '@/app/data/newsData';
 
 export const metadata = {
   title: "News & Events | PIHSOPA Portal | Meetings, Updates, and Announcements",
   description: "Stay up to date with the latest alumni updates, structural reorganizations, committee meetings, and upcoming 20-year anniversary preparations.",
 };
 
-// Data-driven Upcoming Events based on recent assembly decisions
 const upcomingEvents = [
   {
     id: "su-follow-up-meeting",
@@ -44,10 +46,7 @@ const upcomingEvents = [
 export default function NewsEventsPage() {
   return (
     <div className="min-h-screen bg-slate-50 pt-24 pb-12">
-
-      {/* =====================================================
-          1. HERO HEADER: PIHSOPA Media Center
-      ====================================================== */}
+      {/* HERO HEADER */}
       <section className="bg-gradient-to-r from-sky-700 to-indigo-800 py-20 px-6 text-white text-center shadow-md">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-4xl md:text-5xl font-black mb-4 tracking-tight">
@@ -59,9 +58,7 @@ export default function NewsEventsPage() {
         </div>
       </section>
 
-      {/* =====================================================
-          2. UPCOMING EVENTS (Meetings & Milestone Occasions)
-      ====================================================== */}
+      {/* UPCOMING EVENTS */}
       <section className="py-16 px-4 sm:px-6 max-w-6xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-black text-slate-800 inline-block border-b-4 border-sky-500 pb-2">
@@ -109,9 +106,7 @@ export default function NewsEventsPage() {
         </div>
       </section>
 
-      {/* =====================================================
-          3. RECENT NEWS / PAST ACTIVITIES (Dynamic Mapping)
-      ====================================================== */}
+      {/* RECENT NEWS / PAST ACTIVITIES */}
       <section className="py-16 px-4 sm:px-6 bg-slate-100/60 border-t border-slate-200/50">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
@@ -151,7 +146,6 @@ export default function NewsEventsPage() {
               </div>
             ))}
             
-            {/* View Gallery Directory Redirect Option */}
             <div className="text-center pt-8">
               <Link
                 href="/gallery"
@@ -163,7 +157,6 @@ export default function NewsEventsPage() {
           </div>
         </div>
       </section>
-
     </div>
   );
 }

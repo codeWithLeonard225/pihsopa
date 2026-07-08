@@ -73,7 +73,7 @@ const activities = [
 ];
 
 export default function HomePage() {
-  // OPTIMIZATION: Seed the state immediately with fallback data so the layout renders instantly
+  // Seed the state immediately with fallback data so the layout renders instantly
   const [newsFeed, setNewsFeed] = useState(fallbackNewsData);
 
   // Realtime sub loop hook fetching live updates from Firebase
@@ -328,7 +328,6 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* Renders instantly now using fallback dataset, updating silently in background when Firebase finishes */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
             {newsFeed.map((item, index) => (
               <motion.article 
@@ -345,25 +344,24 @@ export default function HomePage() {
                     {item.category}
                   </span>
                   
-                  {item.type === "video" || item.videoUrl ? (
+                  {/* FIXED SCHEMA MATCHER & VIDEO ELEMENT HOOK */}
+                  {item.type === "video" && item.video ? (
                     <div className="relative w-full h-full bg-black flex items-center justify-center">
                       <video 
-                        src={item.videoUrl || item.video} 
-                        className="w-full h-full object-cover opacity-80"
-                        muted
+                        src={item.video} 
+                        className="w-full h-full object-cover opacity-90"
+                        controls
                         preload="metadata"
                       />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition">
-                        <FaPlayCircle className="text-white text-5xl opacity-90 drop-shadow-md group-hover:scale-110 transition-transform" />
-                      </div>
                     </div>
                   ) : (
                     <Image 
-                      src={item.imageUrl || item.image || "/images/pihs-meeting1.jpeg"} 
-                      alt={item.title}
+                      src={item.image || "/images/pihs-meeting1.jpeg"} 
+                      alt={item.title || "News media image"}
                       fill
                       className="object-cover group-hover:scale-105 transition-transform duration-500"
                       sizes="(max-w-768px) 100vw, (max-w-1200px) 50vw, 33vw"
+                      unoptimized={item.image?.disabled || item.image?.startsWith("http")}
                     />
                   )}
                 </div>
