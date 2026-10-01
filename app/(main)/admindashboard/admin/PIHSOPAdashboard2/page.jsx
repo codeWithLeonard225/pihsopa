@@ -33,6 +33,9 @@ import EditMemberPage from "@/app/components/EditMemberPage";
 import NewsCommentsAdmin from "@/app/components/NewsCommentsAdmin";
 import PostNewsPage from "@/app/components/PostNewsPage";
 import ManageNewsPage from "@/app/components/ManageNewsPage";
+import PoloRegPage from "@/app/components/PoloRegPage";
+import PoloQRPrintPage from "@/app/components/PoloQRPrintPage";
+import PoloQRScannerPage from "@/app/components/PoloQRScannerPage";
 // import NewsCommentsAdmin from "@/app/components/NewsCommentsAdmin";
 
 // ---------------- NAVIGATION ----------------
@@ -97,6 +100,21 @@ const NAV_ITEMS = [
     ],
   },
 
+  {
+    key: "PoloRegPage",
+    label: "PoloRegPage",
+    icon: <MdAnalytics />,
+  },
+  {
+    key: "PoloQRPrintPage",
+    label: "PoloQRPrintPage",
+    icon: <MdAnalytics />,
+  },
+  {
+    key: "PoloQRScannerPage",
+    label: "PoloQRScannerPage",
+    icon: <MdAnalytics />,
+  },
   {
     key: "analytics",
     label: "Analytics",
@@ -346,6 +364,12 @@ export default function AdminPanel() {
         return <PostNewsPage/>;
       case "ManageNewsPage":
         return <ManageNewsPage/>;
+      case "PoloRegPage":
+        return <PoloRegPage/>;
+      case "PoloQRPrintPage":
+        return <PoloQRPrintPage/>;
+      case "PoloQRScannerPage":
+        return <PoloQRScannerPage/>;
 
       case "analytics":
         return <Placeholder title="Analytics Dashboard" />;
