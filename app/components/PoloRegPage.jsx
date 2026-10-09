@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -10,6 +9,9 @@ import {
   query,
   where,
   serverTimestamp,
+  updateDoc,
+  deleteDoc,
+  doc,
 } from "firebase/firestore";
 
 import {
@@ -20,144 +22,165 @@ import {
   MdColorLens,
   MdHistory,
   MdSearch,
-  MdQrCode2,
   MdCalendarToday,
   MdVerified,
+  MdEdit,
+  MdDelete,
+  MdCloudUpload,
+  MdClose,
+  MdSave,
 } from "react-icons/md";
+
+import { uploadToCloudinary } from "@/app/lib/cloudinaryUpload";
 
 const ORG_ID = "PIHSOPA";
 
 export default function PoloRegPage() {
-  // ============================================================
-  // DATA
-  // ============================================================
+  /* =========================================================
+     STATE
+  ========================================================= */
 
   const [polos, setPolos] = useState([]);
-
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
 
-  // ============================================================
-  // FORM STATE
-  // ============================================================
-
+  // Registration form
   const [fullname, setFullname] = useState("");
   const [classOf, setClassOf] = useState("");
   const [houseColor, setHouseColor] = useState("");
   const [size, setSize] = useState("");
   const [telephone, setTelephone] = useState("");
+  const [issuedDate, setIssuedDate] = useState("");
 
-  const [issuedDate, setIssuedDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+  // Registration photo
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState("");
 
-  // ============================================================
-  // SEARCH
-  // ============================================================
-
+  // Search
   const [searchTerm, setSearchTerm] = useState("");
 
-  // ============================================================
-  // LOAD POLOS
-  // ============================================================
+  // Edit modal
+  const [editingPolo, setEditingPolo] = useState(null);
+
+  const [editFullname, setEditFullname] = useState("");
+  const [editClassOf, setEditClassOf] = useState("");
+  const [editHouseColor, setEditHouseColor] = useState("");
+  const [editSize, setEditSize] = useState("");
+  const [editTelephone, setEditTelephone] = useState("");
+  const [editIssuedDate, setEditIssuedDate] = useState("");
+
+  const [editPhotoFile, setEditPhotoFile] = useState(null);
+  const [editPhotoPreview, setEditPhotoPreview] = useState("");
+  const [editRemovePhoto, setEditRemovePhoto] = useState(false);
+
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  /* =========================================================
+     FETCH POLOS
+  ========================================================= */
+
+  const fetchPolos = async () => {
+    try {
+      setFetching(true);
+
+      const polosRef = collection(db, "poloRegistrations");
+
+      const q = query(
+        polosRef,
+        where("orgId", "==", ORG_ID)
+      );
+
+      const snapshot = await getDocs(q);
+
+      const data = snapshot.docs.map((item) => ({
+        id: item.id,
+        ...item.data(),
+      }));
+
+      data.sort((a, b) => {
+        const dateA = a.createdAt?.seconds || 0;
+        const dateB = b.createdAt?.seconds || 0;
+
+        return dateB - dateA;
+      });
+
+      setPolos(data);
+    } catch (error) {
+      console.error("Error fetching polos:", error);
+      alert("Failed to load polo registrations.");
+    } finally {
+      setFetching(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchPolos = async () => {
-      try {
-        setFetching(true);
-
-        const poloQuery = query(
-          collection(db, "poloRegistrations"),
-          where("orgId", "==", ORG_ID)
-        );
-
-        const poloSnap = await getDocs(poloQuery);
-
-        const poloData = poloSnap.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-
-        // Newest records first
-        poloData.sort((a, b) => {
-          const dateA = a.createdAt?.seconds || 0;
-          const dateB = b.createdAt?.seconds || 0;
-
-          return dateB - dateA;
-        });
-
-        setPolos(poloData);
-      } catch (error) {
-        console.error("Error loading polo registrations:", error);
-
-        alert("Failed to load polo registrations.");
-      } finally {
-        setFetching(false);
-      }
-    };
-
     fetchPolos();
   }, []);
 
-  // ============================================================
-  // GENERATE POLO ID
-  // ============================================================
+  /* =========================================================
+     GENERATE POLO ID
+  ========================================================= */
 
   const generatePoloId = () => {
-    const year = new Date().getFullYear();
-
     const nextNumber = polos.length + 1;
 
-    return `PIHSOPA-${year}-${String(nextNumber).padStart(4, "0")}`;
+    return `PIHSOPA-${String(nextNumber).padStart(4, "0")}`;
   };
 
-  // ============================================================
-  // GENERATE RANDOM VERIFICATION TOKEN
-  // ============================================================
+  /* =========================================================
+     PHOTO HANDLING - NEW REGISTRATION
+  ========================================================= */
 
-  const generateVerificationToken = () => {
-    const characters =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const handlePhotoChange = (e) => {
+    const file = e.target.files?.[0];
 
-    let token = "";
+    if (!file) return;
 
-    for (let i = 0; i < 24; i++) {
-      token += characters.charAt(
-        Math.floor(Math.random() * characters.length)
-      );
+    if (!file.type.startsWith("image/")) {
+      alert("Please select a valid image file.");
+      return;
     }
 
-    return token;
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Photo size must not exceed 5MB.");
+      return;
+    }
+
+    setPhotoFile(file);
+
+    const preview = URL.createObjectURL(file);
+    setPhotoPreview(preview);
   };
 
-  // ============================================================
-  // REGISTER POLO
-  // ============================================================
+  const handleRemovePhoto = () => {
+    setPhotoFile(null);
+    setPhotoPreview("");
+  };
+
+  /* =========================================================
+     REGISTER POLO
+  ========================================================= */
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // ---------------------------------------------
-    // Validation
-    // ---------------------------------------------
-
     if (!fullname.trim()) {
-      alert("Please enter the recipient's full name.");
+      alert("Please enter the full name.");
       return;
     }
 
     if (!classOf.trim()) {
-      alert("Please enter the Class of.");
+      alert("Please enter the class of.");
       return;
     }
 
     if (!houseColor) {
-      alert("Please select a house color.");
+      alert("Please select the house color.");
       return;
     }
 
     if (!size) {
-      alert("Please select a polo size.");
+      alert("Please select the polo size.");
       return;
     }
 
@@ -166,99 +189,305 @@ export default function PoloRegPage() {
       return;
     }
 
-    setLoading(true);
+    if (!issuedDate) {
+      alert("Please select the issue date.");
+      return;
+    }
 
     try {
-      // ---------------------------------------------
-      // Generate Polo Identity
-      // ---------------------------------------------
+      setLoading(true);
+
+      let photoUrl = "";
+
+      if (photoFile) {
+        photoUrl = await uploadToCloudinary(photoFile, "image");
+      }
 
       const poloId = generatePoloId();
-
-      const verificationToken = generateVerificationToken();
-
-      // ---------------------------------------------
-      // Polo Data
-      // ---------------------------------------------
 
       const poloData = {
         orgId: ORG_ID,
 
-        // Unique Polo Identity
         poloId,
-        verificationToken,
 
-        // Recipient Information
         fullname: fullname.trim(),
-        classOf: classOf.trim(),
-        telephone: telephone.trim(),
 
-        // Polo Information
+        classOf: classOf.trim(),
+
         houseColor,
+
         size,
 
-        // Status
-        status: "ACTIVE",
+        telephone: telephone.trim(),
 
-        // Issue Information
         issuedDate,
 
-        // Firebase timestamp
+        photoUrl,
+
+        status: "Active",
+
         createdAt: serverTimestamp(),
+
+        updatedAt: serverTimestamp(),
       };
 
-      // ---------------------------------------------
-      // Save to Firestore
-      // ---------------------------------------------
-
-      const docRef = await addDoc(
+      await addDoc(
         collection(db, "poloRegistrations"),
         poloData
       );
 
-      // ---------------------------------------------
-      // Add immediately to UI
-      // ---------------------------------------------
+      alert(`Polo registered successfully.\nPolo ID: ${poloId}`);
 
-      const newPolo = {
-        id: docRef.id,
-        ...poloData,
-        createdAt: {
-          seconds: Math.floor(Date.now() / 1000),
-        },
-      };
-
-      setPolos((prev) => [newPolo, ...prev]);
-
-      // ---------------------------------------------
-      // Success Message
-      // ---------------------------------------------
-
-      alert(
-        `Polo ${poloId} has been successfully registered to ${fullname}.`
-      );
-
-      // ---------------------------------------------
-      // Reset Form
-      // ---------------------------------------------
-
+      // Reset form
       setFullname("");
       setClassOf("");
       setHouseColor("");
       setSize("");
       setTelephone("");
-    } catch (error) {
-      console.error("Polo registration error:", error);
+      setIssuedDate("");
+      setPhotoFile(null);
+      setPhotoPreview("");
 
-      alert("Failed to register polo. Please try again.");
+      await fetchPolos();
+    } catch (error) {
+      console.error("Registration error:", error);
+
+      alert(
+        error?.message ||
+          "Failed to register polo. Please try again."
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // ============================================================
-  // FILTER POLOS
-  // ============================================================
+  /* =========================================================
+     EDIT POLO
+  ========================================================= */
+
+  const handleEdit = (polo) => {
+    setEditingPolo(polo);
+
+    setEditFullname(polo.fullname || "");
+    setEditClassOf(polo.classOf || "");
+    setEditHouseColor(polo.houseColor || "");
+    setEditSize(polo.size || "");
+    setEditTelephone(polo.telephone || "");
+    setEditIssuedDate(polo.issuedDate || "");
+
+    setEditPhotoFile(null);
+    setEditPhotoPreview(polo.photoUrl || "");
+    setEditRemovePhoto(false);
+  };
+
+  /* =========================================================
+     EDIT PHOTO
+  ========================================================= */
+
+  const handleEditPhotoChange = (e) => {
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select a valid image file.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Photo size must not exceed 5MB.");
+      return;
+    }
+
+    setEditPhotoFile(file);
+
+    const preview = URL.createObjectURL(file);
+
+    setEditPhotoPreview(preview);
+
+    setEditRemovePhoto(false);
+  };
+
+  const handleRemoveEditPhoto = () => {
+    setEditPhotoFile(null);
+    setEditPhotoPreview("");
+    setEditRemovePhoto(true);
+  };
+
+  /* =========================================================
+     SAVE UPDATED POLO
+  ========================================================= */
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+
+    if (!editingPolo) return;
+
+    if (!editFullname.trim()) {
+      alert("Please enter the full name.");
+      return;
+    }
+
+    if (!editClassOf.trim()) {
+      alert("Please enter the class of.");
+      return;
+    }
+
+    if (!editHouseColor) {
+      alert("Please select the house color.");
+      return;
+    }
+
+    if (!editSize) {
+      alert("Please select the polo size.");
+      return;
+    }
+
+    if (!editTelephone.trim()) {
+      alert("Please enter the telephone number.");
+      return;
+    }
+
+    if (!editIssuedDate) {
+      alert("Please select the issue date.");
+      return;
+    }
+
+    try {
+      setSavingEdit(true);
+
+      let photoUrl = editingPolo.photoUrl || "";
+
+      // Upload replacement photo
+      if (editPhotoFile) {
+        photoUrl = await uploadToCloudinary(
+          editPhotoFile,
+          "image"
+        );
+      }
+
+      // Remove photo
+      if (editRemovePhoto) {
+        photoUrl = "";
+      }
+
+      const updatedData = {
+        fullname: editFullname.trim(),
+
+        classOf: editClassOf.trim(),
+
+        houseColor: editHouseColor,
+
+        size: editSize,
+
+        telephone: editTelephone.trim(),
+
+        issuedDate: editIssuedDate,
+
+        photoUrl,
+
+        updatedAt: serverTimestamp(),
+      };
+
+      const poloRef = doc(
+        db,
+        "poloRegistrations",
+        editingPolo.id
+      );
+
+      await updateDoc(poloRef, updatedData);
+
+      // Update local state
+      setPolos((current) =>
+        current.map((item) =>
+          item.id === editingPolo.id
+            ? {
+                ...item,
+                ...updatedData,
+                updatedAt: {
+                  seconds: Math.floor(Date.now() / 1000),
+                },
+              }
+            : item
+        )
+      );
+
+      alert("Polo updated successfully.");
+
+      closeEditModal();
+    } catch (error) {
+      console.error("Update error:", error);
+
+      alert(
+        error?.message ||
+          "Failed to update polo. Please try again."
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  /* =========================================================
+     DELETE POLO
+  ========================================================= */
+
+  const handleDelete = async (polo) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete the polo registration for ${polo.fullname}?\n\nPolo ID: ${polo.poloId}\n\nThis action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+
+      const poloRef = doc(
+        db,
+        "poloRegistrations",
+        polo.id
+      );
+
+      await deleteDoc(poloRef);
+
+      setPolos((current) =>
+        current.filter((item) => item.id !== polo.id)
+      );
+
+      alert("Polo deleted successfully.");
+    } catch (error) {
+      console.error("Delete error:", error);
+
+      alert(
+        error?.message ||
+          "Failed to delete polo. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* =========================================================
+     CLOSE EDIT MODAL
+  ========================================================= */
+
+  const closeEditModal = () => {
+    setEditingPolo(null);
+
+    setEditFullname("");
+    setEditClassOf("");
+    setEditHouseColor("");
+    setEditSize("");
+    setEditTelephone("");
+    setEditIssuedDate("");
+
+    setEditPhotoFile(null);
+    setEditPhotoPreview("");
+    setEditRemovePhoto(false);
+  };
+
+  /* =========================================================
+     SEARCH
+  ========================================================= */
 
   const filteredPolos = polos.filter((polo) => {
     const search = searchTerm.toLowerCase().trim();
@@ -275,600 +504,944 @@ export default function PoloRegPage() {
     );
   });
 
-  // ============================================================
-  // VERIFICATION URL
-  // ============================================================
-
-  const getVerificationUrl = (token) => {
-    if (typeof window === "undefined") {
-      return "";
-    }
-
-    return `${window.location.origin}/verify-polo/${token}`;
-  };
-
-  // ============================================================
-  // STATISTICS
-  // ============================================================
+  /* =========================================================
+     STATISTICS
+  ========================================================= */
 
   const totalPolos = polos.length;
 
   const activePolos = polos.filter(
-    (polo) => polo.status === "ACTIVE"
+    (polo) => polo.status === "Active"
   ).length;
 
   const uniqueHolders = new Set(
-    polos.map((polo) => polo.telephone).filter(Boolean)
+    polos.map((polo) => polo.fullname?.toLowerCase())
   ).size;
 
-  // ============================================================
-  // RENDER
-  // ============================================================
+  /* =========================================================
+     RENDER
+  ========================================================= */
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+      <div className="max-w-7xl mx-auto">
 
-      {/* ======================================================
-          PAGE HEADER
-      ====================================================== */}
+        {/* =====================================================
+            HEADER
+        ===================================================== */}
 
-      <div className="flex items-center gap-4">
+        <div className="bg-gradient-to-r from-red-900 to-red-700 rounded-2xl p-6 md:p-8 text-white shadow-lg mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
 
-        <div className="p-4 bg-indigo-100 text-indigo-700 rounded-2xl">
-          <MdCheckroom size={32} />
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="bg-white/20 p-3 rounded-xl">
+                  <MdCheckroom size={32} />
+                </div>
+
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-bold">
+                    PIHSOPA Polo Registration
+                  </h1>
+
+                  <p className="text-red-100 text-sm">
+                    Providence International High School Old Pupils Association
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white/10 rounded-xl px-5 py-3">
+              <p className="text-xs text-red-100">
+                Organization
+              </p>
+
+              <p className="font-bold">
+                {ORG_ID}
+              </p>
+            </div>
+
+          </div>
         </div>
 
-        <div>
+        {/* =====================================================
+            STATISTICS
+        ===================================================== */}
 
-          <h1 className="text-3xl font-black text-gray-800">
-            PIHSOPA Polo Registration
-          </h1>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
 
-          <p className="text-gray-500 mt-1">
-            Register and track every polo issued to a recipient.
-          </p>
+          <div className="bg-white rounded-xl shadow-sm border p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">
+                  Total Polos
+                </p>
 
-        </div>
+                <p className="text-3xl font-bold text-gray-900">
+                  {totalPolos}
+                </p>
+              </div>
 
-      </div>
-
-      {/* ======================================================
-          SECTION 1: REGISTER POLO
-      ====================================================== */}
-
-      <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-
-        <div className="flex items-center gap-3 mb-7">
-
-          <div className="p-3 bg-indigo-100 text-indigo-700 rounded-xl">
-            <MdVerified size={24} />
+              <div className="bg-red-100 text-red-700 p-3 rounded-xl">
+                <MdCheckroom size={28} />
+              </div>
+            </div>
           </div>
 
-          <div>
+          <div className="bg-white rounded-xl shadow-sm border p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">
+                  Active Polos
+                </p>
 
-            <h2 className="text-xl font-black text-gray-800">
-              Register New Polo
-            </h2>
+                <p className="text-3xl font-bold text-green-600">
+                  {activePolos}
+                </p>
+              </div>
 
-            <p className="text-sm text-gray-500">
-              Enter the details of the person receiving the polo.
-            </p>
-
+              <div className="bg-green-100 text-green-700 p-3 rounded-xl">
+                <MdVerified size={28} />
+              </div>
+            </div>
           </div>
 
-        </div>
-
-        <form
-          onSubmit={handleSubmit}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-        >
-
-          {/* ==================================================
-              FULL NAME
-          ================================================== */}
-
-          <div>
-
-            <label className="block text-sm font-bold text-gray-600 mb-2">
-              <span className="flex items-center gap-1">
-                <MdPerson />
-                Full Name
-              </span>
-            </label>
-
-            <input
-              type="text"
-              value={fullname}
-              onChange={(e) => setFullname(e.target.value)}
-              placeholder="Enter full name"
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-              required
-            />
-
-          </div>
-
-          {/* ==================================================
-              CLASS OF
-          ================================================== */}
-
-          <div>
-
-            <label className="block text-sm font-bold text-gray-600 mb-2">
-              <span className="flex items-center gap-1">
-                <MdSchool />
-                Class of
-              </span>
-            </label>
-
-            <input
-              type="text"
-              value={classOf}
-              onChange={(e) => setClassOf(e.target.value)}
-              placeholder="e.g. 2012"
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-              required
-            />
-
-          </div>
-
-          {/* ==================================================
-              HOUSE COLOR
-          ================================================== */}
-
-          <div>
-
-            <label className="block text-sm font-bold text-gray-600 mb-2">
-              <span className="flex items-center gap-1">
-                <MdColorLens />
-                House Color
-              </span>
-            </label>
-
-            <select
-              value={houseColor}
-              onChange={(e) => setHouseColor(e.target.value)}
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-              required
-            >
-
-              <option value="">
-                Select house color
-              </option>
-
-              <option value="Red">
-                Red
-              </option>
-
-              <option value="Blue">
-                Blue
-              </option>
-
-              <option value="Green">
-                Green
-              </option>
-
-              <option value="Yellow">
-                Yellow
-              </option>
-
-              <option value="Orange">
-                Orange
-              </option>
-
-              <option value="Purple">
-                Purple
-              </option>
-
-              <option value="White">
-                White
-              </option>
-
-              <option value="Black">
-                Black
-              </option>
-
-            </select>
-
-          </div>
-
-          {/* ==================================================
-              SIZE
-          ================================================== */}
-
-          <div>
-
-            <label className="block text-sm font-bold text-gray-600 mb-2">
-              Polo Size
-            </label>
-
-            <select
-              value={size}
-              onChange={(e) => setSize(e.target.value)}
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-              required
-            >
-
-              <option value="">
-                Select size
-              </option>
-
-              <option value="XS">XS</option>
-              <option value="S">S</option>
-              <option value="M">M</option>
-              <option value="L">L</option>
-              <option value="XL">XL</option>
-              <option value="XXL">XXL</option>
-              <option value="XXXL">XXXL</option>
-
-            </select>
-
-          </div>
-
-          {/* ==================================================
-              TELEPHONE
-          ================================================== */}
-
-          <div>
-
-            <label className="block text-sm font-bold text-gray-600 mb-2">
-              <span className="flex items-center gap-1">
-                <MdPhone />
-                Telephone
-              </span>
-            </label>
-
-            <input
-              type="tel"
-              value={telephone}
-              onChange={(e) => setTelephone(e.target.value)}
-              placeholder="e.g. 076123456"
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-              required
-            />
-
-          </div>
-
-          {/* ==================================================
-              ISSUE DATE
-          ================================================== */}
-
-          <div>
-
-            <label className="block text-sm font-bold text-gray-600 mb-2">
-              <span className="flex items-center gap-1">
-                <MdCalendarToday />
-                Issue Date
-              </span>
-            </label>
-
-            <input
-              type="date"
-              value={issuedDate}
-              onChange={(e) => setIssuedDate(e.target.value)}
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-              required
-            />
-
-          </div>
-
-          {/* ==================================================
-              SUBMIT BUTTON
-          ================================================== */}
-
-          <div className="lg:col-span-3">
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-bold py-3.5 rounded-xl transition-all shadow-md active:scale-95"
-            >
-
-              {loading
-                ? "Registering Polo..."
-                : "Register Polo"}
-
-            </button>
-
-          </div>
-
-        </form>
-
-      </div>
-
-      {/* ======================================================
-          STATISTICS
-      ====================================================== */}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-
-        {/* TOTAL */}
-
-        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-            Total Polos
-          </p>
-
-          <p className="text-3xl font-black text-gray-800 mt-2">
-            {totalPolos}
-          </p>
-
-        </div>
-
-        {/* ACTIVE */}
-
-        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-            Active Polos
-          </p>
-
-          <p className="text-3xl font-black text-green-600 mt-2">
-            {activePolos}
-          </p>
-
-        </div>
-
-        {/* RECIPIENTS */}
-
-        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-            Recipients
-          </p>
-
-          <p className="text-3xl font-black text-indigo-600 mt-2">
-            {uniqueHolders}
-          </p>
-
-        </div>
-
-      </div>
-
-      {/* ======================================================
-          SEARCH
-      ====================================================== */}
-
-      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-
-        <div className="relative">
-
-          <MdSearch
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-            size={22}
-          />
-
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by name, Polo ID, class, telephone or house color..."
-            className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-
-        </div>
-
-      </div>
-
-      {/* ======================================================
-          POLO HISTORY
-      ====================================================== */}
-
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-
-        <div className="p-6 border-b border-gray-50 flex items-center gap-3">
-
-          <MdHistory
-            className="text-gray-400"
-            size={22}
-          />
-
-          <div>
-
-            <h3 className="font-bold text-gray-700">
-              Polo Registration History
-            </h3>
-
-            <p className="text-xs text-gray-400">
-              Every registered polo is assigned a unique identity.
-            </p>
-
+          <div className="bg-white rounded-xl shadow-sm border p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">
+                  Unique Holders
+                </p>
+
+                <p className="text-3xl font-bold text-blue-600">
+                  {uniqueHolders}
+                </p>
+              </div>
+
+              <div className="bg-blue-100 text-blue-700 p-3 rounded-xl">
+                <MdPerson size={28} />
+              </div>
+            </div>
           </div>
 
         </div>
 
-        {/* LOADING */}
+        {/* =====================================================
+            REGISTRATION FORM
+        ===================================================== */}
 
-        {fetching ? (
+        <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-7 mb-6">
 
-          <div className="p-12 text-center text-gray-500">
-            Loading polo records...
+          <div className="flex items-center gap-3 mb-6">
+            <div className="bg-red-100 text-red-700 p-3 rounded-xl">
+              <MdCheckroom size={25} />
+            </div>
+
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">
+                Register New Polo
+              </h2>
+
+              <p className="text-sm text-gray-500">
+                Enter the old pupil information below.
+              </p>
+            </div>
           </div>
 
-        ) : filteredPolos.length === 0 ? (
+          <form onSubmit={handleSubmit}>
 
-          /* EMPTY */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
 
-          <div className="p-12 text-center">
+              {/* FULL NAME */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Full Name
+                </label>
 
-            <MdCheckroom
-              size={48}
-              className="mx-auto text-gray-300 mb-3"
-            />
+                <div className="relative">
+                  <MdPerson
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={20}
+                  />
 
-            <p className="font-semibold text-gray-500">
-              No polo registrations found.
-            </p>
+                  <input
+                    type="text"
+                    value={fullname}
+                    onChange={(e) =>
+                      setFullname(e.target.value)
+                    }
+                    placeholder="Enter full name"
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                  />
+                </div>
+              </div>
 
-            <p className="text-sm text-gray-400 mt-1">
-              Registered polos will appear here.
-            </p>
+              {/* CLASS */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Class of
+                </label>
 
+                <div className="relative">
+                  <MdSchool
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={20}
+                  />
+
+                  <input
+                    type="text"
+                    value={classOf}
+                    onChange={(e) =>
+                      setClassOf(e.target.value)
+                    }
+                    placeholder="e.g. 2012"
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* HOUSE COLOR */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  House Color
+                </label>
+
+                <div className="relative">
+                  <MdColorLens
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={20}
+                  />
+
+                  <select
+                    value={houseColor}
+                    onChange={(e) =>
+                      setHouseColor(e.target.value)
+                    }
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
+                  >
+                    <option value="">
+                      Select house color
+                    </option>
+                    <option value="Red">Red</option>
+                    <option value="Blue">Blue</option>
+                    <option value="Green">Green</option>
+                    <option value="Yellow">Yellow</option>
+                    <option value="Orange">Orange</option>
+                    <option value="Purple">Purple</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* SIZE */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Polo Size
+                </label>
+
+                <select
+                  value={size}
+                  onChange={(e) =>
+                    setSize(e.target.value)
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
+                >
+                  <option value="">
+                    Select size
+                  </option>
+                  <option value="XS">XS</option>
+                  <option value="S">S</option>
+                  <option value="M">M</option>
+                  <option value="L">L</option>
+                  <option value="XL">XL</option>
+                  <option value="XXL">XXL</option>
+                  <option value="XXXL">XXXL</option>
+                </select>
+              </div>
+
+              {/* TELEPHONE */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Telephone
+                </label>
+
+                <div className="relative">
+                  <MdPhone
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={20}
+                  />
+
+                  <input
+                    type="tel"
+                    value={telephone}
+                    onChange={(e) =>
+                      setTelephone(e.target.value)
+                    }
+                    placeholder="Enter telephone"
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* ISSUE DATE */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Issue Date
+                </label>
+
+                <div className="relative">
+                  <MdCalendarToday
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={19}
+                  />
+
+                  <input
+                    type="date"
+                    value={issuedDate}
+                    onChange={(e) =>
+                      setIssuedDate(e.target.value)
+                    }
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                  />
+                </div>
+              </div>
+
+            </div>
+
+            {/* PHOTO */}
+            <div className="mt-6">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Photo
+                <span className="text-gray-400 font-normal">
+                  {" "}
+                  (Optional)
+                </span>
+              </label>
+
+              <div className="flex flex-col md:flex-row gap-4 items-start">
+
+                <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition">
+                  <MdCloudUpload size={22} />
+
+                  <span className="font-semibold">
+                    Upload Photo
+                  </span>
+
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoChange}
+                    className="hidden"
+                  />
+                </label>
+
+                {photoPreview && (
+                  <div className="relative">
+                    <img
+                      src={photoPreview}
+                      alt="Preview"
+                      className="w-24 h-24 object-cover rounded-xl border"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleRemovePhoto}
+                      className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1 hover:bg-red-700"
+                    >
+                      <MdClose size={16} />
+                    </button>
+                  </div>
+                )}
+
+              </div>
+
+              <p className="text-xs text-gray-500 mt-2">
+                Maximum file size: 5MB.
+              </p>
+            </div>
+
+            {/* SUBMIT */}
+            <div className="mt-6 flex justify-end">
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-red-700 text-white font-bold rounded-xl hover:bg-red-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <MdCheckroom size={22} />
+
+                {loading
+                  ? "Registering..."
+                  : "Register Polo"}
+              </button>
+            </div>
+
+          </form>
+        </div>
+
+        {/* =====================================================
+            HISTORY
+        ===================================================== */}
+
+        <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+
+          <div className="p-5 md:p-6 border-b">
+
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+
+              <div className="flex items-center gap-3">
+                <div className="bg-gray-100 text-gray-700 p-3 rounded-xl">
+                  <MdHistory size={24} />
+                </div>
+
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">
+                    Polo Registration History
+                  </h2>
+
+                  <p className="text-sm text-gray-500">
+                    Manage registered PIHSOPA polos.
+                  </p>
+                </div>
+              </div>
+
+              {/* SEARCH */}
+              <div className="relative w-full md:w-96">
+
+                <MdSearch
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  size={22}
+                />
+
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) =>
+                    setSearchTerm(e.target.value)
+                  }
+                  placeholder="Search polo ID, name, class..."
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                />
+
+              </div>
+
+            </div>
           </div>
 
-        ) : (
-
-          /* TABLE */
-
+          {/* TABLE */}
           <div className="overflow-x-auto">
 
-            <table className="w-full text-left">
+            {fetching ? (
+              <div className="p-10 text-center text-gray-500">
+                Loading polo registrations...
+              </div>
+            ) : filteredPolos.length === 0 ? (
+              <div className="p-10 text-center">
 
-              <thead className="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-widest">
+                <MdCheckroom
+                  size={50}
+                  className="mx-auto text-gray-300 mb-3"
+                />
 
-                <tr>
+                <p className="font-semibold text-gray-600">
+                  No polo registrations found.
+                </p>
 
-                  <th className="px-6 py-4">
-                    Polo ID
-                  </th>
+                {searchTerm && (
+                  <p className="text-sm text-gray-400 mt-1">
+                    Try another search term.
+                  </p>
+                )}
 
-                  <th className="px-6 py-4">
-                    Recipient
-                  </th>
+              </div>
+            ) : (
+              <table className="w-full min-w-[1100px]">
 
-                  <th className="px-6 py-4">
-                    Class
-                  </th>
+                <thead className="bg-gray-50 border-b">
 
-                  <th className="px-6 py-4">
-                    House
-                  </th>
+                  <tr>
 
-                  <th className="px-6 py-4">
-                    Size
-                  </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">
+                      Polo
+                    </th>
 
-                  <th className="px-6 py-4">
-                    Telephone
-                  </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">
+                      Recipient
+                    </th>
 
-                  <th className="px-6 py-4">
-                    Date
-                  </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">
+                      Class
+                    </th>
 
-                  <th className="px-6 py-4">
-                    Status
-                  </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">
+                      House
+                    </th>
 
-                  <th className="px-6 py-4 text-right">
-                    QR
-                  </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">
+                      Size
+                    </th>
 
-                </tr>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">
+                      Telephone
+                    </th>
 
-              </thead>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">
+                      Date
+                    </th>
 
-              <tbody className="divide-y divide-gray-100">
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">
+                      Status
+                    </th>
 
-                {filteredPolos.map((polo) => (
-
-                  <tr
-                    key={polo.id}
-                    className="hover:bg-gray-50/50 transition"
-                  >
-
-                    {/* POLO ID */}
-
-                    <td className="px-6 py-4">
-
-                      <span className="font-mono font-bold text-indigo-600 whitespace-nowrap">
-                        {polo.poloId}
-                      </span>
-
-                    </td>
-
-                    {/* NAME */}
-
-                    <td className="px-6 py-4">
-
-                      <span className="font-bold text-gray-800 whitespace-nowrap">
-                        {polo.fullname}
-                      </span>
-
-                    </td>
-
-                    {/* CLASS */}
-
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {polo.classOf}
-                    </td>
-
-                    {/* HOUSE COLOR */}
-
-                    <td className="px-6 py-4">
-
-                      <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded-md text-xs font-bold">
-                        {polo.houseColor}
-                      </span>
-
-                    </td>
-
-                    {/* SIZE */}
-
-                    <td className="px-6 py-4">
-
-                      <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-md text-xs font-bold">
-                        {polo.size}
-                      </span>
-
-                    </td>
-
-                    {/* TELEPHONE */}
-
-                    <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
-                      {polo.telephone}
-                    </td>
-
-                    {/* DATE */}
-
-                    <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
-                      {polo.issuedDate}
-                    </td>
-
-                    {/* STATUS */}
-
-                    <td className="px-6 py-4">
-
-                      <span className="px-2 py-1 bg-green-100 text-green-700 rounded-md text-[10px] font-bold">
-                        {polo.status}
-                      </span>
-
-                    </td>
-
-                    {/* QR */}
-
-                    <td className="px-6 py-4 text-right">
-
-                      <a
-                        href={getVerificationUrl(
-                          polo.verificationToken
-                        )}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex p-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition"
-                        title="Open polo verification page"
-                      >
-
-                        <MdQrCode2 size={22} />
-
-                      </a>
-
-                    </td>
+                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase">
+                      Actions
+                    </th>
 
                   </tr>
 
-                ))}
+                </thead>
 
-              </tbody>
+                <tbody className="divide-y">
 
-            </table>
+                  {filteredPolos.map((polo) => (
+
+                    <tr
+                      key={polo.id}
+                      className="hover:bg-gray-50 transition"
+                    >
+
+                      {/* POLO ID */}
+                      <td className="px-6 py-4">
+
+                        <div className="flex items-center gap-3">
+
+                          {polo.photoUrl ? (
+                            <img
+                              src={polo.photoUrl}
+                              alt={polo.fullname}
+                              className="w-12 h-12 rounded-lg object-cover border"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400">
+                              <MdPerson size={25} />
+                            </div>
+                          )}
+
+                          <div>
+                            <p className="font-bold text-gray-900">
+                              {polo.poloId}
+                            </p>
+
+                            <p className="text-xs text-gray-500">
+                              PIHSOPA
+                            </p>
+                          </div>
+
+                        </div>
+
+                      </td>
+
+                      {/* RECIPIENT */}
+                      <td className="px-6 py-4">
+
+                        <p className="font-semibold text-gray-900">
+                          {polo.fullname}
+                        </p>
+
+                      </td>
+
+                      {/* CLASS */}
+                      <td className="px-6 py-4">
+                        <span className="font-medium text-gray-700">
+                          {polo.classOf}
+                        </span>
+                      </td>
+
+                      {/* HOUSE */}
+                      <td className="px-6 py-4">
+
+                        <span className="inline-flex items-center gap-2">
+
+                          <span
+                            className="w-3 h-3 rounded-full border"
+                            style={{
+                              backgroundColor:
+                                polo.houseColor?.toLowerCase(),
+                            }}
+                          />
+
+                          <span className="font-medium">
+                            {polo.houseColor}
+                          </span>
+
+                        </span>
+
+                      </td>
+
+                      {/* SIZE */}
+                      <td className="px-6 py-4">
+
+                        <span className="px-3 py-1 bg-gray-100 rounded-lg font-bold text-sm">
+                          {polo.size}
+                        </span>
+
+                      </td>
+
+                      {/* TELEPHONE */}
+                      <td className="px-6 py-4">
+
+                        <div className="flex items-center gap-2 text-gray-700">
+
+                          <MdPhone size={18} />
+
+                          {polo.telephone}
+
+                        </div>
+
+                      </td>
+
+                      {/* DATE */}
+                      <td className="px-6 py-4">
+
+                        <span className="text-sm text-gray-600">
+                          {polo.issuedDate || "-"}
+                        </span>
+
+                      </td>
+
+                      {/* STATUS */}
+                      <td className="px-6 py-4">
+
+                        <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                          <MdVerified size={15} />
+                          {polo.status || "Active"}
+                        </span>
+
+                      </td>
+
+                      {/* ACTIONS */}
+                      <td className="px-6 py-4">
+
+                        <div className="flex items-center justify-end gap-2">
+
+                          {/* UPDATE */}
+                          <button
+                            type="button"
+                            onClick={() => handleEdit(polo)}
+                            className="inline-flex items-center gap-1 px-3 py-2 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 transition font-bold text-xs"
+                            title="Update polo"
+                          >
+                            <MdEdit size={18} />
+                            Update
+                          </button>
+
+                          {/* DELETE */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDelete(polo)
+                            }
+                            disabled={loading}
+                            className="inline-flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition font-bold text-xs disabled:opacity-50"
+                            title="Delete polo"
+                          >
+                            <MdDelete size={18} />
+                            Delete
+                          </button>
+
+                        </div>
+
+                      </td>
+
+                    </tr>
+
+                  ))}
+
+                </tbody>
+
+              </table>
+            )}
 
           </div>
 
-        )}
+          {/* FOOTER */}
+          {!fetching && filteredPolos.length > 0 && (
+            <div className="px-6 py-4 border-t bg-gray-50">
 
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+
+                <p className="text-sm text-gray-500">
+                  Showing{" "}
+                  <span className="font-bold text-gray-700">
+                    {filteredPolos.length}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-bold text-gray-700">
+                    {polos.length}
+                  </span>{" "}
+                  registrations
+                </p>
+
+              </div>
+
+            </div>
+          )}
+
+        </div>
       </div>
 
+      {/* =====================================================
+          UPDATE MODAL
+      ===================================================== */}
+
+      {editingPolo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+
+          <div className="bg-white w-full max-w-3xl max-h-[95vh] overflow-y-auto rounded-2xl shadow-2xl">
+
+            {/* MODAL HEADER */}
+            <div className="sticky top-0 z-10 bg-white border-b px-5 md:px-6 py-4 flex items-center justify-between">
+
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  Update Polo
+                </h2>
+
+                <p className="text-sm text-gray-500">
+                  Polo ID:{" "}
+                  <span className="font-bold text-red-700">
+                    {editingPolo.poloId}
+                  </span>
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeEditModal}
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+              >
+                <MdClose size={25} />
+              </button>
+
+            </div>
+
+            {/* MODAL BODY */}
+            <form onSubmit={handleSaveEdit}>
+
+              <div className="p-5 md:p-6 space-y-6">
+
+                {/* PHOTO SECTION */}
+                <div>
+
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                    Polo Photo
+                  </label>
+
+                  <div className="flex flex-col sm:flex-row items-start gap-5">
+
+                    <div className="relative">
+
+                      {editPhotoPreview ? (
+                        <img
+                          src={editPhotoPreview}
+                          alt={editFullname}
+                          className="w-32 h-32 object-cover rounded-xl border"
+                        />
+                      ) : (
+                        <div className="w-32 h-32 rounded-xl bg-gray-100 border flex items-center justify-center text-gray-400">
+                          <MdPerson size={50} />
+                        </div>
+                      )}
+
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+
+                      <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2.5 border rounded-xl hover:bg-gray-50 transition font-semibold text-sm">
+
+                        <MdCloudUpload size={20} />
+
+                        Replace Photo
+
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleEditPhotoChange}
+                          className="hidden"
+                        />
+
+                      </label>
+
+                      {editPhotoPreview && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveEditPhoto}
+                          className="inline-flex items-center gap-2 px-4 py-2.5 bg-red-100 text-red-700 rounded-xl hover:bg-red-200 transition font-semibold text-sm"
+                        >
+                          <MdDelete size={20} />
+                          Remove Photo
+                        </button>
+                      )}
+
+                    </div>
+
+                  </div>
+
+                </div>
+
+                {/* FORM FIELDS */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+                  {/* FULL NAME */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Full Name
+                    </label>
+
+                    <input
+                      type="text"
+                      value={editFullname}
+                      onChange={(e) =>
+                        setEditFullname(e.target.value)
+                      }
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                    />
+                  </div>
+
+                  {/* CLASS */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Class of
+                    </label>
+
+                    <input
+                      type="text"
+                      value={editClassOf}
+                      onChange={(e) =>
+                        setEditClassOf(e.target.value)
+                      }
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                    />
+                  </div>
+
+                  {/* HOUSE */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      House Color
+                    </label>
+
+                    <select
+                      value={editHouseColor}
+                      onChange={(e) =>
+                        setEditHouseColor(e.target.value)
+                      }
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
+                    >
+                      <option value="">
+                        Select house color
+                      </option>
+
+                      <option value="Red">Red</option>
+                      <option value="Blue">Blue</option>
+                      <option value="Green">Green</option>
+                      <option value="Yellow">Yellow</option>
+                      <option value="Orange">Orange</option>
+                      <option value="Purple">Purple</option>
+                    </select>
+                  </div>
+
+                  {/* SIZE */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Polo Size
+                    </label>
+
+                    <select
+                      value={editSize}
+                      onChange={(e) =>
+                        setEditSize(e.target.value)
+                      }
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
+                    >
+                      <option value="">
+                        Select size
+                      </option>
+
+                      <option value="XS">XS</option>
+                      <option value="S">S</option>
+                      <option value="M">M</option>
+                      <option value="L">L</option>
+                      <option value="XL">XL</option>
+                      <option value="XXL">XXL</option>
+                      <option value="XXXL">XXXL</option>
+                    </select>
+                  </div>
+
+                  {/* TELEPHONE */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Telephone
+                    </label>
+
+                    <input
+                      type="tel"
+                      value={editTelephone}
+                      onChange={(e) =>
+                        setEditTelephone(e.target.value)
+                      }
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                    />
+                  </div>
+
+                  {/* DATE */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Issue Date
+                    </label>
+
+                    <input
+                      type="date"
+                      value={editIssuedDate}
+                      onChange={(e) =>
+                        setEditIssuedDate(e.target.value)
+                      }
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                    />
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* MODAL FOOTER */}
+              <div className="sticky bottom-0 bg-white border-t px-5 md:px-6 py-4 flex flex-col sm:flex-row justify-end gap-3">
+
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  disabled={savingEdit}
+                  className="px-5 py-3 rounded-xl border border-gray-300 font-bold text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-red-700 text-white font-bold hover:bg-red-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <MdSave size={21} />
+
+                  {savingEdit
+                    ? "Saving..."
+                    : "Save Changes"}
+                </button>
+
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
