@@ -505,6 +505,16 @@ export default function PoloQRPrintPage() {
                             >
                                 Size: {polo.size || "N/A"}
                             </div>
+                            <div
+                                style={{
+                                    fontSize: "10px",
+                                    fontWeight: "800",
+                                    color: "#374151",
+                                    textAlign: "center",
+                                }}
+                            >
+                                Size: {polo.fullname || "N/A"}
+                            </div>
                         </div>
                     ))
                 ) : (
